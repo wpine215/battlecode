@@ -1,4 +1,6 @@
 package examplefuncsplayer;
+import java.util.Arrays;
+
 import battlecode.common.*;
 
 public strictfp class RobotPlayer {
@@ -53,9 +55,29 @@ public strictfp class RobotPlayer {
         }
     }
 
-    static void runHQ() throws GameActionException {
-        for (Direction dir : directions)
-            tryBuild(RobotType.MINER, dir);
+    static void runHQ() throws GameActionException {       
+        // If first round, broadcast HQ coordinates
+        if (rc.getRoundNumber() == 1) {
+            int currSoup = rc.getTeamSoup();
+            int msg = 1990010000;
+            MapLocation currLoc = rc.getLocation();
+            msg += currLoc.x * 100;
+            msg += currLoc.y;
+            if (!rc.canSubmitTransaction(Arrays.asList(msg), 10)) {
+                // queue for next run
+                System.out.println("Initial transaction could not be sent");
+            } else {
+                rc.submitTransaction(Arrays.asList(msg), 10);
+                System.out.println("Initial transaction sent!");
+            }
+        }
+
+        // Builds up to 3 miners if able to
+        for (Direction dir : directions) {
+            if (rc.getRobotCount() < 3)
+                tryBuild(RobotType.MINER, dir);
+        }
+            
     }
 
     static void runMiner() throws GameActionException {
@@ -64,8 +86,10 @@ public strictfp class RobotPlayer {
         if (tryMove(randomDirection()))
             System.out.println("I moved!");
         // tryBuild(randomSpawnedByMiner(), randomDirection());
+        // for (Direction dir : directions)
+        //     tryBuild(RobotType.FULFILLMENT_CENTER, dir);
         for (Direction dir : directions)
-            tryBuild(RobotType.FULFILLMENT_CENTER, dir);
+            tryBuild(RobotType.DESIGN_SCHOOL, dir);
         for (Direction dir : directions)
             if (tryRefine(dir))
                 System.out.println("I refined soup! " + rc.getTeamSoup());
@@ -83,16 +107,21 @@ public strictfp class RobotPlayer {
     }
 
     static void runDesignSchool() throws GameActionException {
-
+        // Generate landscaper in random direction if able
+        for (Direction dir : directions) {
+            tryBuild(RobotType.LANDSCAPER, dir);
+        }
     }
 
     static void runFulfillmentCenter() throws GameActionException {
-        for (Direction dir : directions)
+        // Generate drone in random direction if able
+        for (Direction dir : directions) {
             tryBuild(RobotType.DELIVERY_DRONE, dir);
+        }
     }
 
     static void runLandscaper() throws GameActionException {
-
+        // Protect HQ
     }
 
     static void runDeliveryDrone() throws GameActionException {
@@ -219,5 +248,41 @@ public strictfp class RobotPlayer {
                 rc.submitTransaction(message, 10);
         }
         // System.out.println(rc.getRoundMessages(turnCount-1));
+    }
+
+    /**
+     * Queries blockchain for any messages in the current round
+     * pertaining to actions which the landscaper should carry out.
+     * 
+     * @return array of message integers from current block
+     * @throws GameActionException
+     */
+    static int[] checkBlockchainLandscaper() throws GameActionException {
+        List<integer> result = new ArrayList<integer>();
+        Transaction[] t = rc.getBlock(rc.getRoundNumber());
+        int temp;
+        for (Transaction i : t) {
+            temp = i.getMessage();
+
+            // broadcast of HQ location
+            if (temp / 10000 ==  199001) {
+                result.add(temp % 1990010000);
+            }
+        }
+        return result.toArray();
+    }
+
+    /**
+     * Moves the calling robot towards the given destination coordinates,
+     * in single-tile increments.
+     * 
+     * @param m the destination location to move towards
+     * @return direction to move the robot 1 tile by
+     * @throws GameActionException
+     */
+    static Direction moveTowardsObjective(MapLocation m) throws GameActionException {
+        // to-do: finish function (currently placeholder)
+
+        return directions[(int) (Math.random() * directions.length)];
     }
 }
