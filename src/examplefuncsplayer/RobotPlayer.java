@@ -81,21 +81,16 @@ public strictfp class RobotPlayer {
     }
 
     static void runMiner() throws GameActionException {
-        tryBlockchain();
         tryMove(randomDirection());
         if (tryMove(randomDirection()))
             System.out.println("I moved!");
-        // tryBuild(randomSpawnedByMiner(), randomDirection());
+
         // for (Direction dir : directions)
-        //     tryBuild(RobotType.FULFILLMENT_CENTER, dir);
-        for (Direction dir : directions)
-            tryBuild(RobotType.DESIGN_SCHOOL, dir);
-        for (Direction dir : directions)
-            if (tryRefine(dir))
-                System.out.println("I refined soup! " + rc.getTeamSoup());
-        for (Direction dir : directions)
-            if (tryMine(dir))
-                System.out.println("I mined soup! " + rc.getSoupCarrying());
+        //     if (tryRefine(dir))
+        //         System.out.println("I refined soup! " + rc.getTeamSoup());
+        // for (Direction dir : directions)
+        //     if (tryMine(dir))
+        //         System.out.println("I mined soup! " + rc.getSoupCarrying());
     }
 
     static void runRefinery() throws GameActionException {
@@ -237,7 +232,6 @@ public strictfp class RobotPlayer {
         } else return false;
     }
 
-
     static void tryBlockchain() throws GameActionException {
         if (turnCount < 3) {
             int[] message = new int[10];
@@ -250,6 +244,43 @@ public strictfp class RobotPlayer {
         // System.out.println(rc.getRoundMessages(turnCount-1));
     }
 
+
+    /////////////////////////////////////////////////////////
+    // CUSTOM CODE
+    ////////////////////////////////////////////////////////
+
+
+    /**
+     * Handles sending transactions to blockchain.
+     * Allows for multiple retries with greater cost.
+     * 
+     * @param msg message integer to send
+     * @param base the initial cost to attempt sending with
+     * @param multiplier the amount the cost is multiplied by on each retry
+     * @param retries the maximum number of time to retry sending a message
+     * @return true if message sent, false otherwise
+     * @throws GameActionException
+     */
+    static boolean txHandler(int msg, int base, int multiplier, int retries) throws GameActionException {
+        if (base < 1 || multiplier < 1 || retries < 1) return false;
+        int currentTxAmount = base;
+        int currentTry = 0;
+        
+        while (!rc.canSubmitTransaction(Arrays.asList(msg), currentTxAmount) && currentTry < retries) {
+            currentTxAmount *= multiplier;
+            currentTry++;
+        }
+
+        if (currentTry < retries) {
+            submitTransaction(msg, currentTxAmount);
+            System.out.println("TX SEND SUCCESS. MSG: " + msg + "; COST: " + currentTxAmount);
+            return true;
+        }
+
+        System.out.println("TX SEND FAILURE. MSG: " + msg + "; COST: " + currentTxAmount);
+        return false;
+    }
+
     /**
      * Queries blockchain for any messages in current round pertaining
      * to location of soup deposits (relevant for miners/refineries)
@@ -258,9 +289,9 @@ public strictfp class RobotPlayer {
      * @throws GameActionException
      */
     static int[] checkBlockchainSoup() throws GameActionException {
+        int temp;
         List<integer> result = new ArrayList<integer>();
         Transaction[] t = rc.getBlock(rc.getRoundNumber() - 1);
-        int temp;
         for (Transaction i : t) {
             temp = i.getMessage();
 
@@ -280,9 +311,10 @@ public strictfp class RobotPlayer {
      * @throws GameActionException
      */
     static int[] checkBlockchainLandscaper() throws GameActionException {
+        int temp;
         List<integer> result = new ArrayList<integer>();
         Transaction[] t = rc.getBlock(rc.getRoundNumber() - 1);
-        int temp;
+
         for (Transaction i : t) {
             temp = i.getMessage();
 
@@ -294,17 +326,36 @@ public strictfp class RobotPlayer {
         return result.toArray();
     }
 
+    static MapLocation[] crudeSoupScan() throws GameActionException {
+        // Scan visible radius for soup able to be mined.
+        // Keep in mind robots have different scan radiuses.
+        // Also keep in mind a full scan is almost never necessary,
+        // since assuming the robot just moved, it only needs to scan the
+        // new, unscanned tiles which have entered its visible radius due to the movement.
+        // This requires the robot instance to keep track of its previous location.
+        List<MapLocation> result = new ArrayList<MapLocation>();
+
+        // to-do finish function
+
+        return result.toArray();
+    }
+
     /**
      * Moves the calling robot towards the given destination coordinates,
-     * in single-tile increments.
+     * in single-tile increments. Turns to avoid obstacles if necessary.
      * 
-     * @param m the destination location to move towards
+     * @param dest the destination location to move towards
      * @return direction to move the robot 1 tile by
      * @throws GameActionException
      */
-    static Direction moveTowardsObjective(MapLocation m) throws GameActionException {
-        // to-do: finish function (currently placeholder)
-
-        return directions[(int) (Math.random() * directions.length)];
+    static boolean[] moveToTarget(MapLocation dest) throws GameActionException {
+        boolean[] result = new boolean[2];
+        
+        // to-do: finish function
+        // 1. Calculate direction vector from current loc to dest
+        // 2. Find the closest available direction (8 possible choices) to move to
+        // 3. If obstacle (another robot, water, elevation change), try other available directions
+        // result[0] indicates whether movement was successful or not
+        // result[1] indicates whether the robot is already at its destination or not
     }
 }
