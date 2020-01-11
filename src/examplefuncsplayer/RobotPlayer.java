@@ -1,5 +1,6 @@
 package examplefuncsplayer;
 import java.util.Arrays;
+import java.util.ArrayList;
 
 import battlecode.common.*;
 
@@ -11,6 +12,14 @@ public strictfp class RobotPlayer {
             RobotType.FULFILLMENT_CENTER, RobotType.NET_GUN};
 
     static int turnCount;
+    
+    static int rebroadcastMsg;
+    static MapLocation localHQ;
+    static MapLocation enemyHQ;
+    static MapLocation previousLocation;
+    static ArrayList<MapLocation> destinationQueue;
+    static ArrayList<MapLocation> refineries;
+    static ArrayList<MapLocation> soupDeposits;
 
     /**
      * run() is the method that is called when a robot is instantiated in the Battlecode world.
@@ -61,15 +70,10 @@ public strictfp class RobotPlayer {
             int currSoup = rc.getTeamSoup();
             int msg = 1990010000;
             MapLocation currLoc = rc.getLocation();
+            refineries.add(currLoc);
             msg += currLoc.x * 100;
             msg += currLoc.y;
-            if (!rc.canSubmitTransaction(Arrays.asList(msg), 10)) {
-                // queue for next run
-                System.out.println("Initial transaction could not be sent");
-            } else {
-                rc.submitTransaction(Arrays.asList(msg), 10);
-                System.out.println("Initial transaction sent!");
-            }
+            txHandler(msg, 1, 5, 3);
         }
 
         // Builds up to 3 miners if able to
@@ -85,12 +89,12 @@ public strictfp class RobotPlayer {
         if (tryMove(randomDirection()))
             System.out.println("I moved!");
 
-        // for (Direction dir : directions)
-        //     if (tryRefine(dir))
-        //         System.out.println("I refined soup! " + rc.getTeamSoup());
-        // for (Direction dir : directions)
-        //     if (tryMine(dir))
-        //         System.out.println("I mined soup! " + rc.getSoupCarrying());
+        for (Direction dir : directions)
+            if (tryRefine(dir))
+                System.out.println("I refined soup! " + rc.getTeamSoup());
+        for (Direction dir : directions)
+            if (tryMine(dir))
+                System.out.println("I mined soup! " + rc.getSoupCarrying());
     }
 
     static void runRefinery() throws GameActionException {
@@ -345,17 +349,46 @@ public strictfp class RobotPlayer {
      * in single-tile increments. Turns to avoid obstacles if necessary.
      * 
      * @param dest the destination location to move towards
-     * @return direction to move the robot 1 tile by
+     * @return if robot was successfully moved or not
      * @throws GameActionException
      */
-    static boolean[] moveToTarget(MapLocation dest) throws GameActionException {
-        boolean[] result = new boolean[2];
-        
-        // to-do: finish function
-        // 1. Calculate direction vector from current loc to dest
-        // 2. Find the closest available direction (8 possible choices) to move to
-        // 3. If obstacle (another robot, water, elevation change), try other available directions
-        // result[0] indicates whether movement was successful or not
-        // result[1] indicates whether the robot is already at its destination or not
+    static boolean moveToTarget(MapLocation dest) throws GameActionException {
+
+        if (rc.getCooldownTurns() > 0) {
+            System.out.println("moveToTarget error: robot on cooldown.");
+            return false;
+        }
+
+        MapLocation currentLoc = rc.getLocation();
+        if (currentLoc == dest) {
+            System.out.println("moveToTarget error: already at dest.");
+            return false;
+        }
+
+        Direction moveTowards = currentLoc.directionTo(dest);
+
+        if (rc.canMove(moveTowards) && !rc.senseFlooding(moveTowards)) {
+            rc.move(moveTowards);
+            result[0] = true;
+            return true;
+        } else {
+            // Build alternate direction queue
+            Direction[] queue = new Direction[4];
+            queue[0] = moveTowards.rotateLeft();
+            queue[1] = moveTowards.rotateRight();
+            queue[2] = queue[0].rotateLeft();
+            queue[3] = queue[1].rotateRight();
+
+            for (Direction d : queue) {
+                if (rc.canMove(d) && !rc.senseFlooding(d)) {
+                    rc.move(d);
+                    return true;
+                }
+            }
+        }
+        // Keep in mind: if the robot enters a dead end or concave obstacle,
+        // it will become trapped. Pathfinding code still needs to account for this.
+        // Maybe modify this to use A* next?
+        return false;
     }
 }
