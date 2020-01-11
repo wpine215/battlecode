@@ -251,21 +251,43 @@ public strictfp class RobotPlayer {
     }
 
     /**
+     * Queries blockchain for any messages in current round pertaining
+     * to location of soup deposits (relevant for miners/refineries)
+     * 
+     * @return array of message integers from previous round's block
+     * @throws GameActionException
+     */
+    static int[] checkBlockchainSoup() throws GameActionException {
+        List<integer> result = new ArrayList<integer>();
+        Transaction[] t = rc.getBlock(rc.getRoundNumber() - 1);
+        int temp;
+        for (Transaction i : t) {
+            temp = i.getMessage();
+
+            // Broadcast of Soup Location
+            if (temp / 1000 == 198001) {
+                result.add(temp % 1980010000);
+            }
+        }
+        return result.toArray();
+    }
+
+    /**
      * Queries blockchain for any messages in the current round
      * pertaining to actions which the landscaper should carry out.
      * 
-     * @return array of message integers from current block
+     * @return array of message integers from previous round's block
      * @throws GameActionException
      */
     static int[] checkBlockchainLandscaper() throws GameActionException {
         List<integer> result = new ArrayList<integer>();
-        Transaction[] t = rc.getBlock(rc.getRoundNumber());
+        Transaction[] t = rc.getBlock(rc.getRoundNumber() - 1);
         int temp;
         for (Transaction i : t) {
             temp = i.getMessage();
 
             // broadcast of HQ location
-            if (temp / 10000 ==  199001) {
+            if (temp / 10000 == 199001) {
                 result.add(temp % 1990010000);
             }
         }
