@@ -1,6 +1,5 @@
 package examplefuncsplayer;
 import java.util.Arrays;
-import java.util.ArrayList;
 
 import battlecode.common.*;
 
@@ -12,14 +11,6 @@ public strictfp class RobotPlayer {
             RobotType.FULFILLMENT_CENTER, RobotType.NET_GUN};
 
     static int turnCount;
-    
-    static int rebroadcastMsg;
-    static MapLocation localHQ;
-    static MapLocation enemyHQ;
-    static MapLocation previousLocation;
-    static ArrayList<MapLocation> destinationQueue;
-    static ArrayList<MapLocation> refineries;
-    static ArrayList<MapLocation> soupDeposits;
 
     /**
      * run() is the method that is called when a robot is instantiated in the Battlecode world.
@@ -70,10 +61,15 @@ public strictfp class RobotPlayer {
             int currSoup = rc.getTeamSoup();
             int msg = 1990010000;
             MapLocation currLoc = rc.getLocation();
-            refineries.add(currLoc);
             msg += currLoc.x * 100;
             msg += currLoc.y;
-            txHandler(msg, 1, 5, 3);
+            if (!rc.canSubmitTransaction(Arrays.asList(msg), 10)) {
+                // queue for next run
+                System.out.println("Initial transaction could not be sent");
+            } else {
+                rc.submitTransaction(Arrays.asList(msg), 10);
+                System.out.println("Initial transaction sent!");
+            }
         }
 
         // Builds up to 3 miners if able to
@@ -85,10 +81,15 @@ public strictfp class RobotPlayer {
     }
 
     static void runMiner() throws GameActionException {
+        tryBlockchain();
         tryMove(randomDirection());
         if (tryMove(randomDirection()))
             System.out.println("I moved!");
-
+        // tryBuild(randomSpawnedByMiner(), randomDirection());
+        // for (Direction dir : directions)
+        //     tryBuild(RobotType.FULFILLMENT_CENTER, dir);
+        for (Direction dir : directions)
+            tryBuild(RobotType.DESIGN_SCHOOL, dir);
         for (Direction dir : directions)
             if (tryRefine(dir))
                 System.out.println("I refined soup! " + rc.getTeamSoup());
@@ -236,6 +237,7 @@ public strictfp class RobotPlayer {
         } else return false;
     }
 
+
     static void tryBlockchain() throws GameActionException {
         if (turnCount < 3) {
             int[] message = new int[10];
@@ -248,147 +250,39 @@ public strictfp class RobotPlayer {
         // System.out.println(rc.getRoundMessages(turnCount-1));
     }
 
-
-    /////////////////////////////////////////////////////////
-    // CUSTOM CODE
-    ////////////////////////////////////////////////////////
-
-
-    /**
-     * Handles sending transactions to blockchain.
-     * Allows for multiple retries with greater cost.
-     * 
-     * @param msg message integer to send
-     * @param base the initial cost to attempt sending with
-     * @param multiplier the amount the cost is multiplied by on each retry
-     * @param retries the maximum number of time to retry sending a message
-     * @return true if message sent, false otherwise
-     * @throws GameActionException
-     */
-    static boolean txHandler(int msg, int base, int multiplier, int retries) throws GameActionException {
-        if (base < 1 || multiplier < 1 || retries < 1) return false;
-        int currentTxAmount = base;
-        int currentTry = 0;
-        
-        while (!rc.canSubmitTransaction(Arrays.asList(msg), currentTxAmount) && currentTry < retries) {
-            currentTxAmount *= multiplier;
-            currentTry++;
-        }
-
-        if (currentTry < retries) {
-            submitTransaction(msg, currentTxAmount);
-            System.out.println("TX SEND SUCCESS. MSG: " + msg + "; COST: " + currentTxAmount);
-            return true;
-        }
-
-        System.out.println("TX SEND FAILURE. MSG: " + msg + "; COST: " + currentTxAmount);
-        return false;
-    }
-
-    /**
-     * Queries blockchain for any messages in current round pertaining
-     * to location of soup deposits (relevant for miners/refineries)
-     * 
-     * @return array of message integers from previous round's block
-     * @throws GameActionException
-     */
-    static int[] checkBlockchainSoup() throws GameActionException {
-        int temp;
-        List<integer> result = new ArrayList<integer>();
-        Transaction[] t = rc.getBlock(rc.getRoundNumber() - 1);
-        for (Transaction i : t) {
-            temp = i.getMessage();
-
-            // Broadcast of Soup Location
-            if (temp / 1000 == 198001) {
-                result.add(temp % 1980010000);
-            }
-        }
-        return result.toArray();
-    }
-
     /**
      * Queries blockchain for any messages in the current round
      * pertaining to actions which the landscaper should carry out.
      * 
-     * @return array of message integers from previous round's block
+     * @return array of message integers from current block
      * @throws GameActionException
      */
     static int[] checkBlockchainLandscaper() throws GameActionException {
-        int temp;
         List<integer> result = new ArrayList<integer>();
-        Transaction[] t = rc.getBlock(rc.getRoundNumber() - 1);
-
+        Transaction[] t = rc.getBlock(rc.getRoundNumber());
+        int temp;
         for (Transaction i : t) {
             temp = i.getMessage();
 
             // broadcast of HQ location
-            if (temp / 10000 == 199001) {
+            if (temp / 10000 ==  199001) {
                 result.add(temp % 1990010000);
             }
         }
         return result.toArray();
     }
 
-    static MapLocation[] crudeSoupScan() throws GameActionException {
-        // Scan visible radius for soup able to be mined.
-        // Keep in mind robots have different scan radiuses.
-        // Also keep in mind a full scan is almost never necessary,
-        // since assuming the robot just moved, it only needs to scan the
-        // new, unscanned tiles which have entered its visible radius due to the movement.
-        // This requires the robot instance to keep track of its previous location.
-        List<MapLocation> result = new ArrayList<MapLocation>();
-
-        // to-do finish function
-
-        return result.toArray();
-    }
-
     /**
      * Moves the calling robot towards the given destination coordinates,
-     * in single-tile increments. Turns to avoid obstacles if necessary.
+     * in single-tile increments.
      * 
-     * @param dest the destination location to move towards
-     * @return if robot was successfully moved or not
+     * @param m the destination location to move towards
+     * @return direction to move the robot 1 tile by
      * @throws GameActionException
      */
-    static boolean moveToTarget(MapLocation dest) throws GameActionException {
+    static Direction moveTowardsObjective(MapLocation m) throws GameActionException {
+        // to-do: finish function (currently placeholder)
 
-        if (rc.getCooldownTurns() > 0) {
-            System.out.println("moveToTarget error: robot on cooldown.");
-            return false;
-        }
-
-        MapLocation currentLoc = rc.getLocation();
-        if (currentLoc == dest) {
-            System.out.println("moveToTarget error: already at dest.");
-            return false;
-        }
-
-        Direction moveTowards = currentLoc.directionTo(dest);
-
-        if (rc.canMove(moveTowards) && !rc.senseFlooding(moveTowards)) {
-            rc.move(moveTowards);
-            result[0] = true;
-            return true;
-        } else {
-            // Build alternate direction queue
-            Direction[] queue = new Direction[4];
-            queue[0] = moveTowards.rotateLeft();
-            queue[1] = moveTowards.rotateRight();
-            queue[2] = queue[0].rotateLeft();
-            queue[3] = queue[1].rotateRight();
-
-            for (Direction d : queue) {
-                if (rc.canMove(d) && !rc.senseFlooding(d)) {
-                    rc.move(d);
-                    return true;
-                }
-            }
-        }
-        // Keep in mind: if the robot enters a dead end or concave obstacle,
-        // it will become trapped. Pathfinding code still needs to account for this.
-        // Maybe modify this to use A* next?
-        return false;
+        return directions[(int) (Math.random() * directions.length)];
     }
 }
