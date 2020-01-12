@@ -1,6 +1,8 @@
 package examplefuncsplayer;
 import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.LinkedList;
 
 import battlecode.common.*;
 
@@ -13,13 +15,19 @@ public strictfp class RobotPlayer {
 
     static int turnCount;
     
+    static int mapHeight;
+    static int mapWidth;
+    static int HQHealth;
+    static int HQElevation;
     static int rebroadcastMsg;
     static MapLocation localHQ;
     static MapLocation enemyHQ;
     static MapLocation previousLocation;
-    static ArrayList<MapLocation> destinationQueue;
+    static Deque<MapLocation> directionQueue;
+    static Deque<MapLocation> previousLocations;
     static ArrayList<MapLocation> refineries;
     static ArrayList<MapLocation> soupDeposits;
+    static ArrayList<MapLocation> waterBodies;
 
     /**
      * run() is the method that is called when a robot is instantiated in the Battlecode world.
@@ -33,6 +41,11 @@ public strictfp class RobotPlayer {
         RobotPlayer.rc = rc;
 
         turnCount = 0;
+
+        mapHeight = rc.getMapHeight();
+        mapWidth = rc.getMapWidth();
+        directionQueue = new LinkedList<MapLocation>();
+        previousLocations = new LinkedList<MapLocation>();
 
         System.out.println("I'm a " + rc.getType() + " and I just got created!");
         while (true) {
@@ -67,13 +80,24 @@ public strictfp class RobotPlayer {
     static void runHQ() throws GameActionException {       
         // If first round, broadcast HQ coordinates
         if (rc.getRoundNumber() == 1) {
-            int currSoup = rc.getTeamSoup();
-            int msg = 1990010000;
-            MapLocation currLoc = rc.getLocation();
-            refineries.add(currLoc);
-            msg += currLoc.x * 100;
-            msg += currLoc.y;
+            int msg = 1990000000;
+            localHQ = rc.getLocation();
+            HQElevation = rc.senseElevation(localHQ);
+            HQHealth = 50;
+            // Add HQ to list of available refineries
+            refineries.add(localHQ);
+            // digits 3-2 reserved for X-coordinate of HQ location
+            msg += localHQ.x * 100;
+            // digits 1-0 reserved for Y-coordinate of HQ location
+            msg += localHQ.y;
             txHandler(msg, 1, 5, 3);
+        }
+
+        // Update HQ health
+        int prevHQHealth = HQHealth;
+        HQHealth = 50 - (rc.senseElevation(localHQ) - HQElevation);
+        if (HQHealth < prevHQHealth) {
+            System.out.println("HQ IS UNDER ATTACK!");
         }
 
         // Builds up to 3 miners if able to
@@ -378,18 +402,45 @@ public strictfp class RobotPlayer {
             queue[1] = moveTowards.rotateRight();
             queue[2] = queue[0].rotateLeft();
             queue[3] = queue[1].rotateRight();
+            queue[4] = queue[2].rotateLeft();
+            queue[5] = queue[3].rotateRight();
 
             for (Direction d : queue) {
                 if (rc.canMove(d) && !rc.senseFlooding(d)) {
-                    rc.move(d);
-                    return true;
+                    if(!previousLocations.contains(rc.adjacentLocation(d))) {
+                        // Make sure previousLocations doesn't get larger than 10
+                        if (previousLocations.size() >= 10) {
+                            previousLocations.removeFirst();
+                        }
+                        // Push back current location to previousLocations, then perform move
+                        previousLocations.addLast(currentLoc);
+                        rc.move(d);
+                        return true;
+                    }
                 }
+            }
+        }
+
+        Direction backtrack = currentLoc.directionT0(previousLocations.peekLast());
+        if (rc.canMove(backtrack) && !rc.senseFlooding(backtrack)) {
+            if (previousLocations.size() >= 10) {
+                previousLocations.removeFirst();
+                previousLocations.addLast(currentLoc);
+                rc.move(backtrack);
+                return true;
             }
         }
         // Keep in mind: if the robot enters a dead end or concave obstacle,
         // it will become trapped. Pathfinding code still needs to account for this.
         // Maybe modify this to use A* next?
         return false;
+    }
+
+    static int getGenesisBroadcast() throws GameActionException {
+        Transaction[] genesisBlock = rc.getBlock(1);
+        for (Transaction t : genesisBlock) {
+
+        }
     }
 
     static boolean HQRebroadcast(int priority) throws GameActionException {
@@ -401,6 +452,23 @@ public strictfp class RobotPlayer {
     static boolean minerDoScout() throws GameActionException {
         // Follows direction queue and broadcasts location of soup deposits or enemy HQ if found
         // Returns True while still scouting, returns False once scout run complete
+        MapLocation currentLoc = rc.getLocation();
+        if (directionQueue.isEmpty()) {
+            // Plot the scouting direction
+            // start by getting HQ coordinates
+            Transaction[] genesisBlock = rc.getBlock(1);
+
+        } else {
+            // Move along direction queue and report soup locations/enemy HQ
+            if (currentLoc == directionQueue.peekFirst()) {
+                // If current objective reached, get the next one
+                directionQueue.removeFirst();
+                if (directionQueue.isEmpty()) return false;
+            }
+            if(!moveToTarget(directionQueue.peekFirst())) {
+                System.out.println("Error: moveToTarget returned false");
+            }
+        }
     }
 
     static boolean minerDoMine(MapLocation nearestRefinery) throws GameActionException {
