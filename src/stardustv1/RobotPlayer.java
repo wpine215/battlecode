@@ -391,4 +391,63 @@ public strictfp class RobotPlayer {
         // Maybe modify this to use A* next?
         return false;
     }
+
+    static boolean HQRebroadcast(int priority) throws GameActionException {
+        // resubmits rebroadcastMsg to blockchain on every round which is a multiple of 10
+        // priority number corresponds to how much cost should be allocated to rebroadcasting
+        // returns false if rebroadcast failed
+    }
+
+    static boolean minerDoScout() throws GameActionException {
+        // Follows direction queue and broadcasts location of soup deposits or enemy HQ if found
+        // Returns True while still scouting, returns False once scout run complete
+    }
+
+    static boolean minerDoMine(MapLocation nearestRefinery) throws GameActionException {
+        // Retrieves soup deposit location from rebroadcast
+        // Scouts x tiles around soup deposit location, mines soup if found
+        // Returns to nearestRefinery once soup storage is full
+        // Returns False if zero soup has been mined (may indicate deposit is empty)
+    }
+
+    static boolean minerDoDefend(MapLocation point, int radiusFromPoint) throws GameActionException {
+        // Positions miner along closest available tile on given radius from point(such as HQ)
+        // Used to build defensive line of robots so enemy can't get through easily
+        // Returns false if the given radius is already fully occupied by defending miners
+    }
+
+    static boolean minerBuildNetline(MapLocation[] battlefront) throws GameActionException {
+        // Builds netgun somewhere along line in between battlefront[0] and battlefront[1]
+        // If only one point provided, build single netgun there
+        // Makes sure to leave ample space from other netguns if in a line
+        // Returns false if battlefront is already fully occupied with netguns
+    }
+
+    static boolean minerBuildRefinery(MapLocation[] target) throws GameActionException {
+        // Builds a refinery near soup deposits, but not on top of an existing deposit
+    }
+
+    static boolean minerBuildSchool(MapLocation[] target) throws GameActionException {
+        // Builds a design school near given target (such as an enemy building)
+    }
+
+    static boolean minerBuildDroneFactory(MapLocation[] target) throws GameActionException {
+        // Builds a drone factory near given target
+    }
+
+    static boolean minerBuildVaporator(MapLocation[] target) throws GameActionException {
+        // Builds a vaporator near given target
+    }
+
+    static boolean droneToTarget(MapLocation dest) throws GameActionException {
+        // Sends blockchain request for a drone to pick up self and drop off at dest
+    }
+
+    static boolean droneAcrossWater(Direction dir) throws GameActionException {
+        // Sends a blockchain requet for a drone to pick up self,
+        // move in direction given by dir, and drop off when water boundary meets land
+        // If edge of map is reached and still no land, pick a random direction (left/right),
+        // turn to it, then hug edge of map and drop off when land is reached.
+    }
+
 }
