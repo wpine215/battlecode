@@ -576,55 +576,95 @@ public strictfp class RobotPlayer {
         if (currentLoc == directionQueue.peekFirst()) {
             // If current objective reached, get the next one
             directionQueue.removeFirst();
+            // If path completed, return false
             if (directionQueue.isEmpty()) return false;
         }
         if(moveToTarget(directionQueue.peekFirst())) {
-            if (minerSenseSoup()) {
-                System.out.println("Scouting miner has located soup!");
-            }
-
+            // scan for soup!
             switch(directionQueue.peekFirst()) {
                 case topLeft:
                     if (clockwise) {
-                        // scan top-facing edge
+                        minerSenseSoup(Direction.NORTH);
                     } else {
-                        // scan left-facing edge
+                        minerSenseSoup(Direction.WEST);
                     }
                     break;
                 case topRight:
                     if (clockwise) {
-                        // scan right-facing edge
+                        minerSenseSoup(Direction.EAST);
                     } else {
-                        // scan top-facing edge
+                        minerSenseSoup(Direction.NORTH);
                     }
                     break;
                 case botLeft:
                     if (clockwise) {
-                        // scan left-facing edge
+                        minerSenseSoup(Direction.WEST);
                     } else {
-                        // scan bottom-facing edge
+                        minerSenseSoup(Direction.SOUTH);
                     }
                     break;
                 case botRight:
                     if (clockwise) {
-                        // scan bottom-facing edge
+                        minerSenseSoup(Direction.SOUTH);
                     } else {
-                        // scan right-facing edge
+                        minerSenseSoup(Direction.EAST);
                     }
                     break;
                 default:
-                    // travelling to first point
+                    // travelling to first point, no need to sense soup
                     break;
             }
-
             return true;
         }
         System.out.println("Scouting Error: moveToTarget returned false");
         return false;
     }
 
-    static boolean minerSenseSoup() throws GameActionException {
-        // sense soup in forward radius
+    static boolean minerSenseSoup(Direction dir) throws GameActionException {
+        // sense soup in given direction from robot
+        ArrayList<MapLocation> soupLoc = new ArrayList<MapLocation>();
+        MapLocation front = rc.adjacentLocation(dir);
+        boolean result = false;
+        // sense soup directly in front
+        if (rc.senseSoup(front) > 0) {
+            soupLoc.add(front);
+            result = true;
+        }
+
+        // Check whether scanner needs to increment along x-axis or y-axis
+        boolean deltaXaxis = false; 
+        if (dir == Direction.NORTH || dir == Direction.SOUTH) {
+            deltaXaxis = true;
+        }
+        // sense soup to the sides
+        MapLocation leftScan = new MapLocation(front.x, front.y);
+        MapLocation rightScan = new MapLocation(front.x, front.y);
+        for (int i = 0; i < 5; i++) {
+            if (deltaXaxis) {
+                leftScan = leftScan.translate(1, 0);
+                rightScan = leftScan.translate(-1, 0);
+            } else {
+                leftScan = leftScan.translate(0, 1);
+                rightScan = leftScan.translate(0, -1);
+            }
+            if (rc.canSenseLocation(leftScan)) {
+                if (rc.senseSoup(leftScan) > 0) {
+                    soupLoc.add(leftScan);
+                    result = true;
+                }
+            } else {
+                break;
+            }
+            if (rc.canSenseLocation(rightScan)) {
+                if (rc.senseSoup(rightScan) > 0) {
+                    soupLoc.add(rightScan);
+                    result = true;
+                }
+            }
+        }
+        // Announce soup findings on blockchain
+        // Append soup findings to soupDeposits static variable
+        return result;
     }
 
     static boolean minerDoMine(MapLocation nearestRefinery) throws GameActionException {
