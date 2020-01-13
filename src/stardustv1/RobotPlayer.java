@@ -1,5 +1,4 @@
 package stardustv1;
-import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedList;
@@ -8,6 +7,7 @@ import battlecode.common.*;
 
 enum MinerState {UNASSIGNED, SCOUTING, MINING, BUILDING}
 enum MiningState {ENROUTE, IN_PROGRESS, REFINING}
+enum LandscaperState {UNASSIGNED, OFFENSE, DEFENSE}
 
 public strictfp class RobotPlayer {
     static RobotController rc;
@@ -24,6 +24,15 @@ public strictfp class RobotPlayer {
     };
     static RobotType[] spawnedByMiner = {RobotType.REFINERY, RobotType.VAPORATOR, RobotType.DESIGN_SCHOOL,
             RobotType.FULFILLMENT_CENTER, RobotType.NET_GUN};
+
+    static Direction[] wallQueue = {Direction.EAST, Direction.WEST, Direction.NORTH, Direction.SOUTH, Direction.NORTHEAST, Direction.NORTHWEST, Direction.SOUTHEAST, Direction.SOUTHWEST};
+    static Direction wallDirection;
+    static boolean wallBuilt;
+
+    static LandscaperState landscaperState = LandscaperState.UNASSIGNED;
+    static int landscaperRound = 300;
+
+    static boolean builtDesignSchool = false;
 
     static int turnCount;
     
@@ -77,8 +86,8 @@ public strictfp class RobotPlayer {
 
         System.out.println("I'm a " + rc.getType() + " and I just got created!");
 
+        localHQ = getHQCoordinates();
         if (rc.getType() == RobotType.MINER) {
-            localHQ = getHQCoordinates();
             refineries.add(localHQ);
         }
 
@@ -149,6 +158,17 @@ public strictfp class RobotPlayer {
 
     static void runMiner() throws GameActionException {
         checkBlockchainSoup();
+
+        if (!builtDesignSchool && rc.getRoundNum() > landscaperRound) {
+            for (Direction dir: directions) {
+                if (rc.canBuildRobot(RobotType.DESIGN_SCHOOL, dir) && !rc.canSenseLocation(localHQ)) {
+                    rc.buildRobot(RobotType.DESIGN_SCHOOL, dir);
+                    builtDesignSchool = true;
+                    break;
+                }
+            }
+        }
+
         if (soupLocations.size() > 0) {
             System.out.println("MINER #" + rc.getID() + " in MINING mode - " + miningState);
             minerDoMine();
@@ -173,7 +193,9 @@ public strictfp class RobotPlayer {
     static void runDesignSchool() throws GameActionException {
         // Generate landscaper in random direction if able
         for (Direction dir : directions) {
-            tryBuild(RobotType.LANDSCAPER, dir);
+            if (rc.getRoundNum() > landscaperRound) {
+                tryBuild(RobotType.LANDSCAPER, dir);
+            }
         }
     }
 
@@ -185,7 +207,146 @@ public strictfp class RobotPlayer {
     }
 
     static void runLandscaper() throws GameActionException {
+        switch (landscaperState) {
+            case UNASSIGNED:    assignLandscaper();
+            case OFFENSE:       runOffenseLandscaper();     break;
+            case DEFENSE:       runDefenseLandscaper();     break;
+        }
+    }
 
+    static void assignLandscaper() {
+        landscaperState = LandscaperState.DEFENSE;
+        // double state = Math.random() * 2;
+        // if (state < 1) landscaperState = LandscaperState.DEFENSE;
+        // else landscaperState = LandscaperState.OFFENSE;
+    }
+
+    static void runOffenseLandscaper() {
+        /*
+         * if (HQHealth < 50 or broadcast of death) {
+         *      become defense
+         *      recur?
+         * }
+         */
+        /*
+         * if enemyHQ not known:
+         * 1. check blockchain for that info
+         * 2. if not found, then go scouting
+         */
+        if (enemyHQ != null) {
+            if (rc.canSenseLocation(enemyHQ)) {
+                for (RobotInfo info: rc.senseNearbyRobots()) {
+                    if (info.team == rc.getTeam().opponent()) {
+                        // move towards it
+                        // attack it
+                        // break
+                    }
+                }
+            } else {
+                // while (moveToTarget(enemyHQ)) {}
+            }
+        }
+    }
+
+    /*
+    need to add a check in HQ for wall being full, and if it is, broadcast that information
+    */
+    /**
+     * decision tree:
+     * 1. if part of the wall, just dig and contribute
+     * 2. else:
+     *      0. if you don't know HQ: get its location
+     *      1. if wall is full, become offense
+     *      2. if wall is not full as far as you know:
+     *          1. if HQ in vision, try to embed yourself into the wall
+     *          2. if HQ not in vision, move towards HQ
+     */
+    static void runDefenseLandscaper() {
+        // if part of the wall, build the wall
+        try {
+            if (wallDirection != null) {
+                while (rc.canDepositDirt(Direction.CENTER)) {
+                    rc.depositDirt(Direction.CENTER);
+                }
+                while (rc.canDigDirt(wallDirection)) {
+                    rc.digDirt(wallDirection);
+                }
+                return;
+            }
+        } catch (GameActionException e) {}
+
+
+        /*
+        if (false) {
+            if (rc.canSenseLocation(localHQ)) {
+                for (RobotInfo info : rc.senseNearbyRobots()) {
+                    if (info.team == rc.getTeam().opponent()) {
+                        // move towards it
+                        // attack it
+                        // break
+                    }
+                }
+            } else {
+                try { while (moveToTarget(localHQ)) {} } catch (GameActionException e) {}
+            }
+        }
+        */
+
+        // if wall is full, become offense
+        if (rc.canSenseLocation(localHQ)) {
+            if (!tryBuildWall()) {
+                return;
+            }
+        } else {
+             try { while (moveToTarget(localHQ)) {} } catch (GameActionException e) {}
+        }
+    }
+
+    // I want HQ to broadcast until wall is finished
+    // corner case bug to consider: you haven't labeled yourself as the wall yet but you're standing where the wall would be
+    static boolean tryBuildWall() {
+        Direction empty = null;
+        for (Direction dir: wallQueue) {
+            try {
+                if (!rc.isLocationOccupied(new MapLocation(localHQ.x + dir.dx, localHQ.y + dir.dy))) {
+                    empty = dir;
+                    break;
+                }
+            } catch (GameActionException e) {
+                empty = dir;
+                break;
+            }
+        }
+
+        if (empty == null) {
+            wallBuilt = true;
+            return false;
+        }
+
+        for (Direction dir: directions) {
+            if (rc.getLocation().x == localHQ.x + dir.dx &&  rc.getLocation().y == localHQ.y + dir.dy) {
+                wallDirection = dir;
+                return true;
+            }
+        }
+
+        MapLocation chosenLocation = new MapLocation(localHQ.x + empty.dx, localHQ.y + empty.dy);
+        try {
+            moveToTarget(chosenLocation);
+        } catch (GameActionException e) {}
+
+        if (rc.getLocation() == chosenLocation) {
+            System.out.println("We have been set into the wall");
+            wallDirection = empty;
+        }
+
+        for (Direction dir: directions) {
+            if (rc.getLocation().x == localHQ.x + dir.dx &&  rc.getLocation().y == localHQ.y + dir.dy) {
+                wallDirection = dir;
+                return true;
+            }
+        }
+        return true;
     }
 
     static void runDeliveryDrone() throws GameActionException {
@@ -429,6 +590,7 @@ public strictfp class RobotPlayer {
     }
 
     static MapLocation getHQCoordinates() throws GameActionException {
+        if (rc.getRoundNum() <= 1) return null;
         Transaction[] genesisBlock = rc.getBlock(1);
         for (Transaction t : genesisBlock) {
             if (t.getMessage()[0] == 101) {
