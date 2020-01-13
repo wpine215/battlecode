@@ -10,25 +10,31 @@ public strictfp class RobotPlayer {
     static RobotController rc;
 
     static Direction[] directions = {Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST};
-    static Direction[] directionsNS = {Direction.NORTH, Direction.SOUTH};
     static RobotType[] spawnedByMiner = {RobotType.REFINERY, RobotType.VAPORATOR, RobotType.DESIGN_SCHOOL,
             RobotType.FULFILLMENT_CENTER, RobotType.NET_GUN};
 
     static int turnCount;
     
+    // Miner specific variables
+    static int minerCounter;
+    static int scoutTurns;
+    static boolean minerScouting;
+    static ArrayList<MapLocation> refineries;
+    static ArrayList<MapLocation> soupDeposits;
+    static MapLocation lastKnownDeposit;
+
     static int mapHeight;
     static int mapWidth;
     static int HQHealth;
     static int HQElevation;
     static int rebroadcastMsg;
-    static boolean minerScouting = true;
+    
     static MapLocation localHQ;
     static MapLocation enemyHQ;
     static MapLocation previousLocation;
     static Deque<MapLocation> directionQueue;
     static Deque<MapLocation> previousLocations;
-    static ArrayList<MapLocation> refineries;
-    static ArrayList<MapLocation> soupDeposits;
+    
     static ArrayList<MapLocation> waterBodies;
 
     /**
@@ -44,12 +50,22 @@ public strictfp class RobotPlayer {
 
         turnCount = 0;
 
+        minerScouting = true;
+        minerCounter = 0;
+        scoutTurns = 0;
+        lastKnownDeposit = new MapLocation(-1, -1);
+
         mapHeight = rc.getMapHeight();
         mapWidth = rc.getMapWidth();
         directionQueue = new LinkedList<MapLocation>();
         previousLocations = new LinkedList<MapLocation>();
 
         System.out.println("I'm a " + rc.getType() + " and I just got created!");
+
+        if (rc.getType() == RobotType.MINER) {
+            localHQ = getHQCoordinates();
+        }
+
         while (true) {
             turnCount += 1;
             // Try/catch blocks stop unhandled exceptions, which cause your robot to explode
@@ -86,7 +102,7 @@ public strictfp class RobotPlayer {
             // refineries.add(localHQ); causes nullPointerException bc not initialized
             int localHQSerialized = locSerializer(localHQ);
             int[] gMsg = new int[]{101, localHQSerialized};
-            txHandler(gMsg, 10, 2, 3);
+            txHandler(gMsg, 5);
         }
 
         // Update HQ health
@@ -96,11 +112,28 @@ public strictfp class RobotPlayer {
             System.out.println("HQ IS UNDER ATTACK!");
         }
 
-        // Builds up to 3 miners if able to
-        for (Direction dir : directionsNS) {
-            if (rc.getRobotCount() < 3)
-                tryBuild(RobotType.MINER, dir);
+        // Builds up to 4 miners if able to
+        switch (minerCounter) {
+            case 0:
+                if (tryBuild(RobotType.MINER, Direction.NORTH)) minerCounter++;
+                break;
+            case 1:
+                if (tryBuild(RobotType.MINER, Direction.SOUTH)) minerCounter++;
+                break;
+            case 2:
+                if (tryBuild(RobotType.MINER, Direction.WEST)) minerCounter++;
+                break;
+            case 3:
+                if (tryBuild(RobotType.MINER, Direction.EAST)) minerCounter++;
+                break;
+            default:
+                break;
         }
+
+        // for (Direction dir : directions) {
+        //     if (rc.getRobotCount() < 5)
+        //         tryBuild(RobotType.MINER, dir);
+        // }
             
     }
 
@@ -117,11 +150,15 @@ public strictfp class RobotPlayer {
             if (tryMine(dir))
                 System.out.println("I mined soup! " + rc.getSoupCarrying());
         */
-        System.out.println("I'm a Stardust miner with ID " + rc.getID() + " and scouting is " + minerScouting);
+        // System.out.println("I'm a Stardust miner with ID " + rc.getID() + " and scouting is " + minerScouting);
         // if (rc.getID() > 3) minerScouting = false;
-        if (minerScouting && rc.isReady()) {
-            minerScouting = minerDoScout();
+        // if (minerScouting && rc.isReady()) {
+        //     minerScouting = minerDoScout();
+        // }
+        if (rc.isReady()) {
+            minerDoRandomScout();
         }
+        System.out.println(">>>>>>> BYTECODES USED BY MINER: " + Clock.getBytecodeNum());
     }
 
     static void runRefinery() throws GameActionException {
@@ -275,15 +312,12 @@ public strictfp class RobotPlayer {
         // System.out.println(rc.getRoundMessages(turnCount-1));
     }
 
-
     /////////////////////////////////////////////////////////
     // CUSTOM CODE
     ////////////////////////////////////////////////////////
 
-
     static int locSerializer(MapLocation loc) throws GameActionException {
-        int result = 0;
-        result += loc.y;
+        int result = loc.y;
         result += loc.x * 100;
         return result;
     }
@@ -303,24 +337,17 @@ public strictfp class RobotPlayer {
      * @return true if message sent, false otherwise
      * @throws GameActionException
      */
-    static boolean txHandler(int[] msg, int base, int multiplier, int retries) throws GameActionException {
-        if (base < 1 || multiplier < 1 || retries < 1) return false;
+    static boolean txHandler(int[] msg, int cost) throws GameActionException {
+        if (cost < 1) return false;
         if (msg.length < 1 || msg.length > 7) return false;
-        int currentTxAmount = base;
-        int currentTry = 0;
-        
-        while (!rc.canSubmitTransaction(msg, currentTxAmount) && currentTry < retries) {
-            currentTxAmount *= multiplier;
-            currentTry++;
-        }
 
-        if (currentTry < retries) {
-            rc.submitTransaction(msg, currentTxAmount);
-            System.out.println("TX SEND SUCCESS. COST: " + currentTxAmount);
+        if (rc.canSubmitTransaction(msg, cost)) {
+            rc.submitTransaction(msg, cost);
+            System.out.println("TX SEND SUCCESS. COST: " + cost);
             return true;
         }
 
-        System.out.println("TX SEND FAILURE. COST: " + currentTxAmount);
+        System.out.println("TX SEND FAILURE. COST: " + cost);
         return false;
     }
 
@@ -477,247 +504,82 @@ public strictfp class RobotPlayer {
         return false;
     }
 
-    static boolean minerDoScout() throws GameActionException {
-        // Follows direction queue and broadcasts location of soup deposits or enemy HQ if found
-        // Returns True while still scouting, returns False once scout run complete
-        MapLocation currentLoc = rc.getLocation();
-        localHQ = getHQCoordinates();
-        boolean clockwise = false;
-        boolean topHalf = localHQ.y > mapHeight / 2;
-        int localTop;
-        int localBot;
-        MapLocation topLeft = new MapLocation(0,0);
-        MapLocation topRight = new MapLocation(0,0);;
-        MapLocation botLeft = new MapLocation(0,0);;
-        MapLocation botRight = new MapLocation(0,0);;
+    static void minerDoRandomScout() throws GameActionException {
+        MapLocation topLeft = new MapLocation(8, mapHeight - 8);
+        MapLocation topRight = new MapLocation(mapWidth - 8, mapHeight - 8);
+        MapLocation botLeft = new MapLocation(8, 8);
+        MapLocation botRight = new MapLocation(mapWidth - 8, 8);
 
         if (directionQueue.isEmpty()) {
-            if (rc.getRoundNum() > 100) return false;
-
-            if (rc.getLocation().y > localHQ.y)
-                clockwise = true;
-
-            int[] edgeDelta = new int[4];
-            if (topHalf) {
-                edgeDelta[0] = mapHeight - localHQ.y;       // distance to top
-                edgeDelta[1] = localHQ.y - (mapHeight/2);   // distance to bottom
+            if (rc.getLocation().y > localHQ.y) {
+                directionQueue.addLast(topLeft);
+            } else if (rc.getLocation().y < localHQ.y) {
+                directionQueue.addLast(topRight);
+            } else if (rc.getLocation().x < localHQ.x) {
+                directionQueue.addLast(botLeft);
             } else {
-                edgeDelta[0] = (mapHeight/2) - localHQ.y;   // distance to top
-                edgeDelta[1] = localHQ.y;                   // distance to bottom
-            }
-            edgeDelta[2] = localHQ.x;                       // distance to left
-            edgeDelta[3] = mapWidth - localHQ.x;            // distance to right
-
-            // Find closest edge to HQ
-            int min = 64;
-            int index = 0;
-            for (int i = 0; i < 4; i++) {
-                if (edgeDelta[i] < min) {
-                    min = edgeDelta[i];
-                    index = i;
-                }
-            }
-
-            // calculate edge scouting margins
-            int marginX = 0;
-            int marginY = 0;
-            if (mapWidth > 58) marginX = 3;
-            if (mapWidth > 26) marginY = 3;
-
-            // Calculate corners (this code should be cleaned up/optimized)
-            if (topHalf) {
-                topLeft = new MapLocation(5 + marginX, mapHeight - 5 - marginY);
-                topRight = new MapLocation(mapWidth - 5 - marginX, mapHeight - 5 - marginY);
-                botLeft = new MapLocation(5 + marginX, (mapHeight/2) + 5 + marginY);
-                botRight = new MapLocation(mapWidth - 5 - marginX, (mapHeight/2) + 5 + marginY);
-                localTop = mapHeight;
-                localBot = mapHeight/2;
-            } else {
-                topLeft = new MapLocation(5 + marginX, (mapHeight/2) - 5 - marginY);
-                topRight = new MapLocation(mapWidth - 5 - marginX, (mapHeight/2) - 5 - marginY);
-                botLeft = new MapLocation(5 + marginX, 5 + marginY);
-                botRight = new MapLocation(mapWidth - 5 - marginX, 5 + marginY);
-                localTop = mapHeight/2;
-                localBot = 0;
-            }
-
-            switch (index) {
-                case 0:
-                    // start at top edge
-                    if (clockwise) {
-                        MapLocation firstPoint = new MapLocation(localHQ.x + 1,  localTop - 5 - marginY);
-                        directionQueue.addLast(firstPoint);
-                        directionQueue.addLast(topRight);
-                        directionQueue.addLast(botRight);
-                        directionQueue.addLast(botLeft);
-                    } else {
-                        MapLocation firstPoint = new MapLocation(localHQ.x - 1, localTop - 5 - marginY);
-                        directionQueue.addLast(firstPoint);
-                        directionQueue.addLast(topLeft);
-                        directionQueue.addLast(botLeft);
-                        directionQueue.addLast(botRight);
-                    }
-                    break;
-                case 1:
-                    // start at bottom edge
-                    if (clockwise) {
-                        MapLocation firstPoint = new MapLocation(localHQ.x - 1, localBot + 5 + marginY);
-                        directionQueue.addLast(firstPoint);
-                        directionQueue.addLast(botLeft);
-                        directionQueue.addLast(topLeft);
-                        directionQueue.addLast(botRight);
-                    } else {
-                        MapLocation firstPoint = new MapLocation(localHQ.x + 1, localBot + 5 + marginY);
-                        directionQueue.addLast(firstPoint);
-                        directionQueue.addLast(botRight);
-                        directionQueue.addLast(topRight);
-                        directionQueue.addLast(topLeft);
-                    }
-                    break;
-                case 2:
-                    // start at left edge
-                    if (clockwise) {
-                        MapLocation firstPoint = new MapLocation(5 + marginX, localHQ.y + 1);
-                        directionQueue.addLast(firstPoint);
-                        directionQueue.addLast(topLeft);
-                        directionQueue.addLast(topRight);
-                        directionQueue.addLast(botRight);
-                    } else {
-                        MapLocation firstPoint = new MapLocation(5 + marginX, localHQ.y - 1);
-                        directionQueue.addLast(firstPoint);
-                        directionQueue.addLast(botLeft);
-                        directionQueue.addLast(botRight);
-                        directionQueue.addLast(topRight);
-                    }
-                    break;
-                default:
-                    // start at right edge
-                    if (clockwise) {
-                        MapLocation firstPoint = new MapLocation(mapWidth - 5 - marginX, localHQ.y - 1);
-                        directionQueue.addLast(firstPoint);
-                        directionQueue.addLast(botRight);
-                        directionQueue.addLast(botLeft);
-                        directionQueue.addLast(topLeft);
-                    } else {
-                        MapLocation firstPoint = new MapLocation(mapWidth - 5 - marginX, localHQ.y + 1);
-                        directionQueue.addLast(firstPoint);
-                        directionQueue.addLast(topRight);
-                        directionQueue.addLast(topLeft);
-                        directionQueue.addLast(botLeft);
-                    }
-                    break;
+                directionQueue.addLast(botRight);
             }
         }
-        // Move along direction queue and report soup locations/enemy HQ
-        if (rc.getLocation().x == directionQueue.peekFirst().x && rc.getLocation().y == directionQueue.peekFirst().y) {
-            // If current objective reached, get the next one
-            directionQueue.removeFirst();
-            // If path completed, return false
-            if (directionQueue.isEmpty()) return false;
-        }
-        if(moveToTarget(directionQueue.peekFirst())) {
-            // scan for soup!
-            // System.out.println(">>>>>>>>>>>>>>> MOVE TO TARGET CALLED, SCANNING FOR SOUP!");
-            MapLocation topOfQueue = directionQueue.peekFirst();
-            if (topOfQueue.x == topLeft.x && topOfQueue.y == topLeft.y) {
-                if (clockwise) {
-                    minerSenseSoup(Direction.NORTH);
-                } else {
-                    minerSenseSoup(Direction.WEST);
-                }
-            } else if (topOfQueue.x == topRight.x && topOfQueue.y == topRight.y) {
-                if (clockwise) {
-                    minerSenseSoup(Direction.EAST);
-                } else {
-                    minerSenseSoup(Direction.NORTH);
-                }
-            } else if (topOfQueue.x == botLeft.x && topOfQueue.y == botLeft.y) {
-                if (clockwise) {
-                    minerSenseSoup(Direction.WEST);
-                } else {
-                    minerSenseSoup(Direction.SOUTH);
-                }
-            } else if (topOfQueue.x == botRight.x && topOfQueue.y == botRight.y) {
-                if (clockwise) {
-                    minerSenseSoup(Direction.SOUTH);
-                } else {
-                    minerSenseSoup(Direction.EAST);
-                }
-            } else {
-                System.out.println(">>>>>>>>>>>>>>>>>>>>>>>>>TOP OF QUEUE DOES NOT MATCH ANYTHING!");
-            }
-                //else {
-                // at first point, do nothing
-            //}
 
+        if (rc.getLocation().equals(directionQueue.peekFirst()) || scoutTurns > 50) {
+            minerScouting = false;
+        }
+        
+        if (minerScouting) {
+            moveToTarget(directionQueue.peekFirst());
+            scoutTurns++;
+        } else {
+            tryMove(randomDirection());
+        }
+        for (Direction dir : directions)
+            tryMine(dir);
+        if (minerDoBruteSoupSearch()) {
+            System.out.println("FOUND SOME SOUP!");
+        }
+    }
+
+    static boolean minerDoBruteSoupSearch() throws GameActionException {
+        MapLocation cLoc = rc.getLocation();
+        MapLocation soupLoc = new MapLocation(-1, -1);
+        int maxSoup = 0;
+        for (int i = cLoc.x - 5; i <= cLoc.x + 5; i++) {
+            for (int j = cLoc.y - 5; j <= cLoc.y + 5; j ++) {
+                MapLocation temp = new MapLocation(i, j);
+                if (rc.canSenseLocation(temp)) {
+                    int soupAmt = rc.senseSoup(temp);
+                    if (soupAmt > 0) {
+                        rc.setIndicatorDot(temp, 0, 0, 0);
+                    }
+                    if (soupAmt > maxSoup) {
+                        maxSoup = soupAmt;
+                        soupLoc = temp;
+                    }
+                }
+            }
+        }
+
+        if (soupLoc.x != -1 && soupLoc.y != -1) {
+            int slocSerial = locSerializer(soupLoc);
+            int[] soupMsg = new int[]{201, slocSerial};
+            txHandler(soupMsg, 2);
+            // Append soup findings to soupDeposits static variable
+            // soupDeposits.add(soupLoc);
             return true;
         }
-        System.out.println("Scouting Error: moveToTarget returned false");
+
         return false;
     }
 
-    static boolean minerSenseSoup(Direction dir) throws GameActionException {
-        // sense soup in given direction from robot
-        ArrayList<MapLocation> soupLoc = new ArrayList<>();
-        MapLocation front = rc.adjacentLocation(dir);
-        boolean result = false;
-        // sense soup directly in front
-        if (rc.senseSoup(front) > 0) {
-            System.out.println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>SENSED SOUP IN FRONT!");
-            soupLoc.add(front);
-            result = true;
-        }
-
-        // Check whether scanner needs to increment along x-axis or y-axis
-        boolean deltaXaxis = false; 
-        if (dir == Direction.NORTH || dir == Direction.SOUTH) {
-            deltaXaxis = true;
-        }
-        // sense soup to the sides
-        MapLocation leftScan = new MapLocation(front.x, front.y);
-        MapLocation rightScan = new MapLocation(front.x, front.y);
-        for (int i = 0; i < 5; i++) {
-            if (deltaXaxis) {
-                leftScan = leftScan.translate(1, 0);
-                rightScan = leftScan.translate(-1, 0);
-            } else {
-                leftScan = leftScan.translate(0, 1);
-                rightScan = leftScan.translate(0, -1);
-            }
-            System.out.println(">>>>>>>>>>>>>>>>>>>>> iteration " + i + ", leftScanning " + leftScan + " & rightScanning " + rightScan);
-            if (rc.canSenseLocation(leftScan)) {
-                if (rc.senseSoup(leftScan) > 0) {
-                    soupLoc.add(leftScan);
-                    result = true;
-                }
-            } else {
-                break;
-            }
-            if (rc.canSenseLocation(rightScan)) {
-                if (rc.senseSoup(rightScan) > 0) {
-                    soupLoc.add(rightScan);
-                    result = true;
-                }
-            }
-        }
-        if (result) {
-            // Announce soup findings on blockchain
-            int sloc = locSerializer(soupLoc.get(0));   // only sends first soup found, could be expanded on
-            int[] soupMsg = new int[]{201, sloc};
-            txHandler(soupMsg, 3, 2, 3);
-            // Append soup findings to soupDeposits static variable
-            soupDeposits.addAll(soupLoc);
-        }
-        return result;
-    }
-
-    static boolean minerDoMine(MapLocation nearestRefinery) throws GameActionException {
+    static boolean minerDoMine(MapLocation soupDeposit, MapLocation nearestRefinery) throws GameActionException {
         // Retrieves soup deposit location from rebroadcast
         // Scouts x tiles around soup deposit location, mines soup if found
         // If no soup found in radius, send broadcast indicating deposit might be empty, and move to another deposit
         // If HQ receives multiple deposit empty messages, it removes deposit from rebroadcast
         // Returns to nearestRefinery once soup storage is full
         // Returns False if no more soup deposits in rebroadcast
+
+        
 
         return false;
     }
