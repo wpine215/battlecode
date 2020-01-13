@@ -34,20 +34,15 @@
 - Soup Deposit Located
   - 1) Hashed round number (upper 7 digits), identifier (lower 3 digits (**201**))
   - 2) Coordinates of soup deposit (lower 4 digits)
-  - 3) Amount of soup at deposit
-  - 4) ID of miner that located it
 - Soup Deposit Area Depleted
   - 1) Hashed round number (upper 7 digits), identifier (lower 3 digits (**202**))
   - 2) Coordinates of soup deposit (lower 4 digits)
-  - 3) ID of miner calling in message
 - Enemy HQ Located
   - 1) Hashed round number (upper 7 digits), identifier (lower 3 digits (**220**))
   - 2) Coordinates of enemy HQ (lower 4 digits)
-  - 3) ID of miner calling in message
 - Enemy Design School Located
   - 1) Hashed round number (upper 7 digits), identifier (lower 3 digits (**221**))
   - 2) Coordinates of enemy design school (lower 4 digits)
-  - 3) ID of miner calling in message
 
 ### Messages from Landscapers
 
