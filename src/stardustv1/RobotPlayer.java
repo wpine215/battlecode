@@ -148,9 +148,17 @@ public strictfp class RobotPlayer {
     }
 
     static void runMiner() throws GameActionException {
-        if (rc.isReady()) {
-            minerDoRandomScout();
+        checkBlockchainSoup();
+        if (soupLocations.size() > 0) {
+            System.out.println("MINER #" + rc.getID() + " in MINING mode - " + miningState);
+            minerDoMine();
+        } else {
+            System.out.println("MINER #" + rc.getID() + " in SCOUTING mode!");
+            if (rc.isReady()) {
+                minerDoRandomScout();
+            }
         }
+        
         System.out.println(">>>>>>> BYTECODES USED BY MINER: " + Clock.getBytecodeNum());
     }
 
@@ -445,7 +453,7 @@ public strictfp class RobotPlayer {
         MapLocation botLeft = new MapLocation(8, 8);
         MapLocation botRight = new MapLocation(mapWidth - 8, 8);
 
-        if (travelQueue.isEmpty()) {
+        if (minerScouting && travelQueue.isEmpty()) {
             if (rc.getLocation().y > localHQ.y) {
                 travelQueue.addLast(topLeft);
             } else if (rc.getLocation().y < localHQ.y) {
@@ -459,13 +467,15 @@ public strictfp class RobotPlayer {
 
         if (rc.getLocation().equals(travelQueue.peekFirst()) || scoutTurns > 50) {
             minerScouting = false;
-            travelQueue.removeFirst();
+            travelQueue.clear();
         }
         
         if (minerScouting) {
+            System.out.println("CONDITION A");
             moveToTarget(travelQueue.peekFirst());
             scoutTurns++;
         } else {
+            System.out.println("CONDITION B");
             tryMove(randomDirection());
         }
         for (Direction dir : directions)
