@@ -1,4 +1,4 @@
-package examplefuncsplayer;
+package stardustv1;
 import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -10,6 +10,7 @@ public strictfp class RobotPlayer {
     static RobotController rc;
 
     static Direction[] directions = {Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST};
+    static Direction[] directionsNS = {Direction.NORTH, Direction.SOUTH};
     static RobotType[] spawnedByMiner = {RobotType.REFINERY, RobotType.VAPORATOR, RobotType.DESIGN_SCHOOL,
             RobotType.FULFILLMENT_CENTER, RobotType.NET_GUN};
 
@@ -20,6 +21,7 @@ public strictfp class RobotPlayer {
     static int HQHealth;
     static int HQElevation;
     static int rebroadcastMsg;
+    static boolean minerScouting = true;
     static MapLocation localHQ;
     static MapLocation enemyHQ;
     static MapLocation previousLocation;
@@ -79,18 +81,12 @@ public strictfp class RobotPlayer {
 
     static void runHQ() throws GameActionException {       
         // If first round, broadcast HQ coordinates
-        if (rc.getRoundNumber() == 1) {
-            int msg = 1990000000;
+        if (rc.getRoundNum() == 1) {
             localHQ = rc.getLocation();
-            HQElevation = rc.senseElevation(localHQ);
-            HQHealth = 50;
-            // Add HQ to list of available refineries
-            refineries.add(localHQ);
-            // digits 3-2 reserved for X-coordinate of HQ location
-            msg += localHQ.x * 100;
-            // digits 1-0 reserved for Y-coordinate of HQ location
-            msg += localHQ.y;
-            txHandler(msg, 1, 5, 3);
+            // refineries.add(localHQ); causes nullPointerException bc not initialized
+            int localHQSerialized = locSerializer(localHQ);
+            int[] gMsg = new int[]{101, localHQSerialized};
+            txHandler(gMsg, 10, 2, 3);
         }
 
         // Update HQ health
@@ -101,7 +97,7 @@ public strictfp class RobotPlayer {
         }
 
         // Builds up to 3 miners if able to
-        for (Direction dir : directions) {
+        for (Direction dir : directionsNS) {
             if (rc.getRobotCount() < 3)
                 tryBuild(RobotType.MINER, dir);
         }
@@ -109,6 +105,7 @@ public strictfp class RobotPlayer {
     }
 
     static void runMiner() throws GameActionException {
+        /*
         tryMove(randomDirection());
         if (tryMove(randomDirection()))
             System.out.println("I moved!");
@@ -119,6 +116,12 @@ public strictfp class RobotPlayer {
         for (Direction dir : directions)
             if (tryMine(dir))
                 System.out.println("I mined soup! " + rc.getSoupCarrying());
+        */
+        System.out.println("I'm a Stardust miner with ID " + rc.getID() + " and scouting is " + minerScouting);
+        // if (rc.getID() > 3) minerScouting = false;
+        if (minerScouting && rc.isReady()) {
+            minerScouting = minerDoScout();
+        }
     }
 
     static void runRefinery() throws GameActionException {
@@ -278,34 +281,46 @@ public strictfp class RobotPlayer {
     ////////////////////////////////////////////////////////
 
 
+    static int locSerializer(MapLocation loc) throws GameActionException {
+        int result = 0;
+        result += loc.y;
+        result += loc.x * 100;
+        return result;
+    }
+
+    static MapLocation locDeserializer(int loc) throws GameActionException {
+        return new MapLocation(loc / 100, loc % 100);
+    }
+
     /**
      * Handles sending transactions to blockchain.
      * Allows for multiple retries with greater cost.
      * 
-     * @param msg message integer to send
+     * @param msg[] message integer array to send
      * @param base the initial cost to attempt sending with
      * @param multiplier the amount the cost is multiplied by on each retry
      * @param retries the maximum number of time to retry sending a message
      * @return true if message sent, false otherwise
      * @throws GameActionException
      */
-    static boolean txHandler(int msg, int base, int multiplier, int retries) throws GameActionException {
+    static boolean txHandler(int[] msg, int base, int multiplier, int retries) throws GameActionException {
         if (base < 1 || multiplier < 1 || retries < 1) return false;
+        if (msg.length < 1 || msg.length > 7) return false;
         int currentTxAmount = base;
         int currentTry = 0;
         
-        while (!rc.canSubmitTransaction(Arrays.asList(msg), currentTxAmount) && currentTry < retries) {
+        while (!rc.canSubmitTransaction(msg, currentTxAmount) && currentTry < retries) {
             currentTxAmount *= multiplier;
             currentTry++;
         }
 
         if (currentTry < retries) {
-            submitTransaction(msg, currentTxAmount);
-            System.out.println("TX SEND SUCCESS. MSG: " + msg + "; COST: " + currentTxAmount);
+            rc.submitTransaction(msg, currentTxAmount);
+            System.out.println("TX SEND SUCCESS. COST: " + currentTxAmount);
             return true;
         }
 
-        System.out.println("TX SEND FAILURE. MSG: " + msg + "; COST: " + currentTxAmount);
+        System.out.println("TX SEND FAILURE. COST: " + currentTxAmount);
         return false;
     }
 
@@ -316,20 +331,23 @@ public strictfp class RobotPlayer {
      * @return array of message integers from previous round's block
      * @throws GameActionException
      */
-    static int[] checkBlockchainSoup() throws GameActionException {
-        int temp;
-        List<integer> result = new ArrayList<integer>();
-        Transaction[] t = rc.getBlock(rc.getRoundNumber() - 1);
-        for (Transaction i : t) {
-            temp = i.getMessage();
+    // static int[] checkBlockchainSoup() throws GameActionException {
+    //     int temp;
+    //     ArrayList<Integer> result = new ArrayList<>();
+    //     Transaction[] t = rc.getBlock(rc.getRoundNum() - 1);
+    //     /*
+    //     for (Transaction i : t) {
+    //         temp = i.getMessage();
 
-            // Broadcast of Soup Location
-            if (temp / 1000 == 198001) {
-                result.add(temp % 1980010000);
-            }
-        }
-        return result.toArray();
-    }
+    //         // Broadcast of Soup Location
+    //         if (temp / 1000 == 198001) {
+    //             result.add(temp % 1980010000);
+    //         }
+    //     }
+    //     */
+    //     int[] resultArr = result.toArray(new int[result.size()]);
+    //     return resultArr;
+    // }
 
     /**
      * Queries blockchain for any messages in the current round
@@ -338,35 +356,38 @@ public strictfp class RobotPlayer {
      * @return array of message integers from previous round's block
      * @throws GameActionException
      */
-    static int[] checkBlockchainLandscaper() throws GameActionException {
-        int temp;
-        List<integer> result = new ArrayList<integer>();
-        Transaction[] t = rc.getBlock(rc.getRoundNumber() - 1);
+    // static int[] checkBlockchainLandscaper() throws GameActionException {
+    //     int temp;
+    //     ArrayList<integer> result = new ArrayList<>();
+    //     Transaction[] t = rc.getBlock(rc.getRoundNum() - 1);
+    //     /*
+    //     for (Transaction i : t) {
+    //         temp = i.getMessage();
 
-        for (Transaction i : t) {
-            temp = i.getMessage();
+    //         // broadcast of HQ location
+    //         if (temp / 10000 == 199001) {
+    //             result.add(temp % 1990010000);
+    //         }
+    //     }
+    //     */
+    //     int[] resultArr = result.toArray(new int[result.size()]);
+    //     return resultArr;
+    // }
 
-            // broadcast of HQ location
-            if (temp / 10000 == 199001) {
-                result.add(temp % 1990010000);
-            }
-        }
-        return result.toArray();
-    }
+    // static MapLocation[] crudeSoupScan() throws GameActionException {
+    //     // Scan visible radius for soup able to be mined.
+    //     // Keep in mind robots have different scan radiuses.
+    //     // Also keep in mind a full scan is almost never necessary,
+    //     // since assuming the robot just moved, it only needs to scan the
+    //     // new, unscanned tiles which have entered its visible radius due to the movement.
+    //     // This requires the robot instance to keep track of its previous location.
+    //     ArrayList<MapLocation> result = new ArrayList<>();
 
-    static MapLocation[] crudeSoupScan() throws GameActionException {
-        // Scan visible radius for soup able to be mined.
-        // Keep in mind robots have different scan radiuses.
-        // Also keep in mind a full scan is almost never necessary,
-        // since assuming the robot just moved, it only needs to scan the
-        // new, unscanned tiles which have entered its visible radius due to the movement.
-        // This requires the robot instance to keep track of its previous location.
-        List<MapLocation> result = new ArrayList<MapLocation>();
+    //     // to-do finish function
 
-        // to-do finish function
-
-        return result.toArray();
-    }
+    //     int[] resultArr = result.toArray(new int[result.size()]);
+    //     return resultArr;
+    // }
 
     /**
      * Moves the calling robot towards the given destination coordinates,
@@ -390,13 +411,12 @@ public strictfp class RobotPlayer {
 
         Direction moveTowards = currentLoc.directionTo(dest);
 
-        if (rc.canMove(moveTowards) && !rc.senseFlooding(moveTowards)) {
+        if (rc.canMove(moveTowards) && !rc.senseFlooding(rc.adjacentLocation(moveTowards))) {
             rc.move(moveTowards);
-            result[0] = true;
             return true;
         } else {
             // Build alternate direction queue
-            Direction[] queue = new Direction[4];
+            Direction[] queue = new Direction[6];
             queue[0] = moveTowards.rotateLeft();
             queue[1] = moveTowards.rotateRight();
             queue[2] = queue[0].rotateLeft();
@@ -405,7 +425,7 @@ public strictfp class RobotPlayer {
             queue[5] = queue[3].rotateRight();
 
             for (Direction d : queue) {
-                if (rc.canMove(d) && !rc.senseFlooding(d)) {
+                if (rc.canMove(d) && !rc.senseFlooding(rc.adjacentLocation(d))) {
                     if(!previousLocations.contains(rc.adjacentLocation(d))) {
                         // Make sure previousLocations doesn't get larger than 10
                         if (previousLocations.size() >= 10) {
@@ -419,14 +439,17 @@ public strictfp class RobotPlayer {
                 }
             }
         }
-
-        Direction backtrack = currentLoc.directionTo(previousLocations.peekLast());
-        if (rc.canMove(backtrack) && !rc.senseFlooding(backtrack)) {
-            if (previousLocations.size() >= 10) {
-                previousLocations.removeFirst();
-                previousLocations.addLast(currentLoc);
-                rc.move(backtrack);
-                return true;
+        
+        if (previousLocations.size() > 0) {
+            Direction backtrack = currentLoc.directionTo(previousLocations.peekLast());
+            System.out.println("at line 443, backtrack is " + backtrack);
+            if (rc.canMove(backtrack) && !rc.senseFlooding(rc.adjacentLocation(backtrack))) {
+                if (previousLocations.size() >= 10) {
+                    previousLocations.removeFirst();
+                    previousLocations.addLast(currentLoc);
+                    rc.move(backtrack);
+                    return true;
+                }
             }
         }
         // Keep in mind: if the robot enters a dead end or concave obstacle,
@@ -438,27 +461,41 @@ public strictfp class RobotPlayer {
     static MapLocation getHQCoordinates() throws GameActionException {
         Transaction[] genesisBlock = rc.getBlock(1);
         for (Transaction t : genesisBlock) {
-            // code to get initial HQ broadcast here
+            if (t.getMessage()[0] == 101) {
+                return locDeserializer(t.getMessage()[1]);
+            }
         }
+        // Find a way to fix this - temporary fallback case if genesis message not found
+        return new MapLocation(0, 0);
     }
 
     static boolean HQRebroadcast(int priority) throws GameActionException {
         // resubmits rebroadcastMsg to blockchain on every round which is a multiple of 10
         // priority number corresponds to how much cost should be allocated to rebroadcasting
         // returns false if rebroadcast failed
+
+        return false;
     }
 
     static boolean minerDoScout() throws GameActionException {
         // Follows direction queue and broadcasts location of soup deposits or enemy HQ if found
         // Returns True while still scouting, returns False once scout run complete
         MapLocation currentLoc = rc.getLocation();
+        localHQ = getHQCoordinates();
+        boolean clockwise = false;
+        boolean topHalf = localHQ.y > mapHeight / 2;
+        int localTop;
+        int localBot;
+        MapLocation topLeft = new MapLocation(0,0);
+        MapLocation topRight = new MapLocation(0,0);;
+        MapLocation botLeft = new MapLocation(0,0);;
+        MapLocation botRight = new MapLocation(0,0);;
+
         if (directionQueue.isEmpty()) {
-            if (rc.getRoundNumber > 100) return false;
-            // Plot the scouting direction
-            // start by getting HQ coordinates
-            localHQ = getHQCoordinates();
-            boolean clockwise = rc.getID() % 2 == 0;
-            boolean topHalf = localHQ.y > mapHeight / 2;
+            if (rc.getRoundNum() > 100) return false;
+
+            if (rc.getLocation().y > localHQ.y)
+                clockwise = true;
 
             int[] edgeDelta = new int[4];
             if (topHalf) {
@@ -469,7 +506,7 @@ public strictfp class RobotPlayer {
                 edgeDelta[1] = localHQ.y;                   // distance to bottom
             }
             edgeDelta[2] = localHQ.x;                       // distance to left
-            edgeDelta[4] = mapWidth - localHQ.x;            // distance to right
+            edgeDelta[3] = mapWidth - localHQ.x;            // distance to right
 
             // Find closest edge to HQ
             int min = 64;
@@ -489,19 +526,19 @@ public strictfp class RobotPlayer {
 
             // Calculate corners (this code should be cleaned up/optimized)
             if (topHalf) {
-                MapLocation topLeft = new MapLocation(5 + marginX, mapHeight - 5 - marginY);
-                MapLocation topRight = new MapLocation(mapWidth - 5 - marginX, mapHeight - 5 - marginY);
-                MapLocation botLeft = new MapLocation(5 + marginX, (mapHeight/2) + 5 + marginY);
-                MapLocation botRight = new MapLocation(mapWidth - 5 - marginX, (mapHeight/2) + 5 + marginY);
-                int localTop = mapHeight;
-                int localBot = mapHeight/2;
+                topLeft = new MapLocation(5 + marginX, mapHeight - 5 - marginY);
+                topRight = new MapLocation(mapWidth - 5 - marginX, mapHeight - 5 - marginY);
+                botLeft = new MapLocation(5 + marginX, (mapHeight/2) + 5 + marginY);
+                botRight = new MapLocation(mapWidth - 5 - marginX, (mapHeight/2) + 5 + marginY);
+                localTop = mapHeight;
+                localBot = mapHeight/2;
             } else {
-                MapLocation topLeft = new MapLocation(5 + marginX, (mapHeight/2) - 5 - marginY);
-                MapLocation topRight = new MapLocation(mapWidth - 5 - marginX, (mapHeight/2) - 5 - marginY);
-                MapLocation botLeft = new MapLocation(5 + marginX, 5 + marginY);
-                MapLocation botRight = new MapLocation(mapWidth - 5 - marginX, 5 + marginY);
-                int localTop = mapHeight/2;
-                int localBot = 0;
+                topLeft = new MapLocation(5 + marginX, (mapHeight/2) - 5 - marginY);
+                topRight = new MapLocation(mapWidth - 5 - marginX, (mapHeight/2) - 5 - marginY);
+                botLeft = new MapLocation(5 + marginX, 5 + marginY);
+                botRight = new MapLocation(mapWidth - 5 - marginX, 5 + marginY);
+                localTop = mapHeight/2;
+                localBot = 0;
             }
 
             switch (index) {
@@ -572,7 +609,7 @@ public strictfp class RobotPlayer {
             }
         }
         // Move along direction queue and report soup locations/enemy HQ
-        if (currentLoc == directionQueue.peekFirst()) {
+        if (rc.getLocation().x == directionQueue.peekFirst().x && rc.getLocation().y == directionQueue.peekFirst().y) {
             // If current objective reached, get the next one
             directionQueue.removeFirst();
             // If path completed, return false
@@ -580,39 +617,39 @@ public strictfp class RobotPlayer {
         }
         if(moveToTarget(directionQueue.peekFirst())) {
             // scan for soup!
-            switch(directionQueue.peekFirst()) {
-                case topLeft:
-                    if (clockwise) {
-                        minerSenseSoup(Direction.NORTH);
-                    } else {
-                        minerSenseSoup(Direction.WEST);
-                    }
-                    break;
-                case topRight:
-                    if (clockwise) {
-                        minerSenseSoup(Direction.EAST);
-                    } else {
-                        minerSenseSoup(Direction.NORTH);
-                    }
-                    break;
-                case botLeft:
-                    if (clockwise) {
-                        minerSenseSoup(Direction.WEST);
-                    } else {
-                        minerSenseSoup(Direction.SOUTH);
-                    }
-                    break;
-                case botRight:
-                    if (clockwise) {
-                        minerSenseSoup(Direction.SOUTH);
-                    } else {
-                        minerSenseSoup(Direction.EAST);
-                    }
-                    break;
-                default:
-                    // travelling to first point, no need to sense soup
-                    break;
+            // System.out.println(">>>>>>>>>>>>>>> MOVE TO TARGET CALLED, SCANNING FOR SOUP!");
+            MapLocation topOfQueue = directionQueue.peekFirst();
+            if (topOfQueue.x == topLeft.x && topOfQueue.y == topLeft.y) {
+                if (clockwise) {
+                    minerSenseSoup(Direction.NORTH);
+                } else {
+                    minerSenseSoup(Direction.WEST);
+                }
+            } else if (topOfQueue.x == topRight.x && topOfQueue.y == topRight.y) {
+                if (clockwise) {
+                    minerSenseSoup(Direction.EAST);
+                } else {
+                    minerSenseSoup(Direction.NORTH);
+                }
+            } else if (topOfQueue.x == botLeft.x && topOfQueue.y == botLeft.y) {
+                if (clockwise) {
+                    minerSenseSoup(Direction.WEST);
+                } else {
+                    minerSenseSoup(Direction.SOUTH);
+                }
+            } else if (topOfQueue.x == botRight.x && topOfQueue.y == botRight.y) {
+                if (clockwise) {
+                    minerSenseSoup(Direction.SOUTH);
+                } else {
+                    minerSenseSoup(Direction.EAST);
+                }
+            } else {
+                System.out.println(">>>>>>>>>>>>>>>>>>>>>>>>>TOP OF QUEUE DOES NOT MATCH ANYTHING!");
             }
+                //else {
+                // at first point, do nothing
+            //}
+
             return true;
         }
         System.out.println("Scouting Error: moveToTarget returned false");
@@ -621,11 +658,12 @@ public strictfp class RobotPlayer {
 
     static boolean minerSenseSoup(Direction dir) throws GameActionException {
         // sense soup in given direction from robot
-        ArrayList<MapLocation> soupLoc = new ArrayList<MapLocation>();
+        ArrayList<MapLocation> soupLoc = new ArrayList<>();
         MapLocation front = rc.adjacentLocation(dir);
         boolean result = false;
         // sense soup directly in front
         if (rc.senseSoup(front) > 0) {
+            System.out.println(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>SENSED SOUP IN FRONT!");
             soupLoc.add(front);
             result = true;
         }
@@ -646,6 +684,7 @@ public strictfp class RobotPlayer {
                 leftScan = leftScan.translate(0, 1);
                 rightScan = leftScan.translate(0, -1);
             }
+            System.out.println(">>>>>>>>>>>>>>>>>>>>> iteration " + i + ", leftScanning " + leftScan + " & rightScanning " + rightScan);
             if (rc.canSenseLocation(leftScan)) {
                 if (rc.senseSoup(leftScan) > 0) {
                     soupLoc.add(leftScan);
@@ -661,9 +700,14 @@ public strictfp class RobotPlayer {
                 }
             }
         }
-        // Announce soup findings on blockchain
-        // Append soup findings to soupDeposits static variable
-        soupDeposits.addAll(soupLoc);
+        if (result) {
+            // Announce soup findings on blockchain
+            int sloc = locSerializer(soupLoc.get(0));   // only sends first soup found, could be expanded on
+            int[] soupMsg = new int[]{201, sloc};
+            txHandler(soupMsg, 3, 2, 3);
+            // Append soup findings to soupDeposits static variable
+            soupDeposits.addAll(soupLoc);
+        }
         return result;
     }
 
@@ -674,12 +718,16 @@ public strictfp class RobotPlayer {
         // If HQ receives multiple deposit empty messages, it removes deposit from rebroadcast
         // Returns to nearestRefinery once soup storage is full
         // Returns False if no more soup deposits in rebroadcast
+
+        return false;
     }
 
     static boolean minerDoDefend(MapLocation point, int radiusFromPoint) throws GameActionException {
         // Positions miner along closest available tile on given radius from point(such as HQ)
         // Used to build defensive line of robots so enemy can't get through easily
         // Returns false if the given radius is already fully occupied by defending miners
+
+        return false;
     }
 
     static boolean minerBuildNetline(MapLocation[] battlefront) throws GameActionException {
@@ -687,26 +735,38 @@ public strictfp class RobotPlayer {
         // If only one point provided, build single netgun there
         // Makes sure to leave ample space from other netguns if in a line
         // Returns false if battlefront is already fully occupied with netguns
+
+        return false;
     }
 
     static boolean minerBuildRefinery(MapLocation[] target) throws GameActionException {
         // Builds a refinery near soup deposits, but not on top of an existing deposit
+
+        return false;
     }
 
     static boolean minerBuildSchool(MapLocation[] target) throws GameActionException {
         // Builds a design school near given target (such as an enemy building)
+
+        return false;
     }
 
     static boolean minerBuildDroneFactory(MapLocation[] target) throws GameActionException {
         // Builds a drone factory near given target
+
+        return false;
     }
 
     static boolean minerBuildVaporator(MapLocation[] target) throws GameActionException {
         // Builds a vaporator near given target
+
+        return false;
     }
 
     static boolean droneToTarget(MapLocation dest) throws GameActionException {
         // Sends blockchain request for a drone to pick up self and drop off at dest
+
+        return false;
     }
 
     static boolean droneAcrossWater(Direction dir) throws GameActionException {
@@ -714,6 +774,8 @@ public strictfp class RobotPlayer {
         // move in direction given by dir, and drop off when water boundary meets land
         // If edge of map is reached and still no land, pick a random direction (left/right),
         // turn to it, then hug edge of map and drop off when land is reached.
+
+        return false;
     }
 
 }
