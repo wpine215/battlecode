@@ -7,11 +7,21 @@ import java.util.LinkedList;
 import battlecode.common.*;
 
 enum MinerState {UNASSIGNED, SCOUTING, MINING, BUILDING}
+enum MiningState {ENROUTE, IN_PROGRESS, REFINING}
 
 public strictfp class RobotPlayer {
     static RobotController rc;
 
-    static Direction[] directions = {Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST};
+    static Direction[] directions = {
+        Direction.NORTH,
+        Direction.NORTHEAST,
+        Direction.EAST,
+        Direction.SOUTHEAST,
+        Direction.SOUTH,
+        Direction.SOUTHWEST,
+        Direction.WEST,
+        Direction.NORTHWEST
+    };
     static RobotType[] spawnedByMiner = {RobotType.REFINERY, RobotType.VAPORATOR, RobotType.DESIGN_SCHOOL,
             RobotType.FULFILLMENT_CENTER, RobotType.NET_GUN};
 
@@ -21,8 +31,11 @@ public strictfp class RobotPlayer {
     static int minerCounter;
     static int scoutTurns;
     static boolean minerScouting; // not needed after introducing enums
+    static MinerState minerState = MinerState.UNASSIGNED;
+    static MiningState miningState = MiningState.ENROUTE;
     static ArrayList<MapLocation> refineries;
-    static ArrayList<MapLocation> soupDeposits;
+    static ArrayList<MapLocation> soupLocations;
+    static MapLocation lastSoupDeposit = new MapLocation(-1, -1);
 
     static int mapHeight;
     static int mapWidth;
@@ -54,7 +67,7 @@ public strictfp class RobotPlayer {
         minerCounter = 0;
         minerScouting = true;
         refineries = new ArrayList<>();
-        soupDeposits = new ArrayList<>();
+        soupLocations = new ArrayList<>();
 
         mapWidth = rc.getMapWidth();
         mapHeight = rc.getMapHeight();
@@ -64,7 +77,10 @@ public strictfp class RobotPlayer {
 
         System.out.println("I'm a " + rc.getType() + " and I just got created!");
 
-        if (rc.getType() == RobotType.MINER) localHQ = getHQCoordinates();
+        if (rc.getType() == RobotType.MINER) {
+            localHQ = getHQCoordinates();
+            refineries.add(localHQ);
+        }
 
         while (true) {
             turnCount += 1;
@@ -292,6 +308,11 @@ public strictfp class RobotPlayer {
         return new MapLocation(loc / 100, loc % 100);
     }
 
+    static boolean locIsNull(MapLocation loc) throws GameActionException {
+        if (loc.x < 0 || loc.y < 0) return true;
+        return false;
+    }
+
     /**
      * Handles sending transactions to blockchain.
      * Allows for multiple retries with greater cost.
@@ -315,30 +336,24 @@ public strictfp class RobotPlayer {
         return false;
     }
 
-    /**
-     * Queries blockchain for any messages in current round pertaining
-     * to location of soup deposits (relevant for miners/refineries)
-     * 
-     * @return array of message integers from previous round's block
-     * @throws GameActionException
-     */
-    // static int[] checkBlockchainSoup() throws GameActionException {
-    //     int temp;
-    //     ArrayList<Integer> result = new ArrayList<>();
-    //     Transaction[] t = rc.getBlock(rc.getRoundNum() - 1);
-    //     /*
-    //     for (Transaction i : t) {
-    //         temp = i.getMessage();
+    static void checkBlockchainSoup() throws GameActionException {
+        Transaction[] lastBlock = rc.getBlock(rc.getRoundNum() - 1);
 
-    //         // Broadcast of Soup Location
-    //         if (temp / 1000 == 198001) {
-    //             result.add(temp % 1980010000);
-    //         }
-    //     }
-    //     */
-    //     int[] resultArr = result.toArray(new int[result.size()]);
-    //     return resultArr;
-    // }
+        for (Transaction t : lastBlock) {
+            if (t.getMessage()[0] == 201) {
+                MapLocation temp = locDeserializer(t.getMessage()[1]);
+                boolean soupLocationAlreadyEntered = false;
+                for (MapLocation sl : soupLocations) {
+                    if (temp.isWithinDistanceSquared(sl, 25)) {
+                        soupLocationAlreadyEntered = true;
+                    }
+                }
+                if (!soupLocationAlreadyEntered) {
+                    soupLocations.add(temp);
+                }
+            }
+        }
+    }
 
     /**
      * Moves the calling robot towards the given destination coordinates,
@@ -393,7 +408,6 @@ public strictfp class RobotPlayer {
         
         if (previousLocations.size() > 0) {
             Direction backtrack = currentLoc.directionTo(previousLocations.peekLast());
-            System.out.println("at line 443, backtrack is " + backtrack);
             if (rc.canMove(backtrack) && !rc.senseFlooding(rc.adjacentLocation(backtrack))) {
                 if (previousLocations.size() >= 10) {
                     previousLocations.removeFirst();
@@ -445,6 +459,7 @@ public strictfp class RobotPlayer {
 
         if (rc.getLocation().equals(travelQueue.peekFirst()) || scoutTurns > 50) {
             minerScouting = false;
+            travelQueue.removeFirst();
         }
         
         if (minerScouting) {
@@ -465,7 +480,7 @@ public strictfp class RobotPlayer {
         MapLocation soupLoc = new MapLocation(-1, -1);
         int maxSoup = 0;
         for (int i = cLoc.x - 5; i <= cLoc.x + 5; i++) {
-            for (int j = cLoc.y - 5; j <= cLoc.y + 5; j ++) {
+            for (int j = cLoc.y - 5; j <= cLoc.y + 5; j++) {
                 MapLocation temp = new MapLocation(i, j);
                 if (rc.canSenseLocation(temp)) {
                     int soupAmt = rc.senseSoup(temp);
@@ -480,23 +495,50 @@ public strictfp class RobotPlayer {
             }
         }
 
-        if (soupLoc.x != -1 && soupLoc.y != -1) {
+        if (!locIsNull(soupLoc)) {
+            // CHECK WHETHER THIS SOUP DEPOSIT IS WITHIN 5 TILE RADIUS OF EXISTING ENTRIES IN soupLocations!
+            // IF NOT, THEN ADD IT TO soupLocations AND BROADCAST ON BLOCKCHAIN
+            boolean soupLocationAlreadyEntered = false;
 
-            // CHECK WHETHER THIS SOUP DEPOSIT IS WITHIN 5 TILE RADIUS OF EXISTING ENTRIES IN soupDeposits!
-            // IF NOT, THEN ADD IT TO soupDeposits AND BROADCAST ON BLOCKCHAIN
-
-            int slocSerial = locSerializer(soupLoc);
-            int[] soupMsg = new int[]{201, slocSerial};
-            txHandler(soupMsg, 2);
-            // Append soup findings to soupDeposits static variable
-            // soupDeposits.add(soupLoc);
+            for (MapLocation sl : soupLocations) {
+                if (soupLoc.isWithinDistanceSquared(sl, 25)) {
+                    soupLocationAlreadyEntered = true;
+                }
+            }
+            
+            if (!soupLocationAlreadyEntered) {
+                soupLocations.add(soupLoc);
+                int slocSerial = locSerializer(soupLoc);
+                int[] soupMsg = new int[]{201, slocSerial};
+                txHandler(soupMsg, 2);
+            }
+            
             return true;
         }
 
         return false;
     }
 
-    static boolean minerDoMine(MapLocation soupDeposit, MapLocation nearestRefinery) throws GameActionException {
+    static MapLocation minerDoStaticSoupSearch() throws GameActionException {
+        MapLocation cLoc = rc.getLocation();
+        MapLocation soupLoc = new MapLocation(-1, -1);
+        int maxSoup = 0;
+        for (int i = cLoc.x - 5; i <= cLoc.x + 5; i++) {
+            for (int j = cLoc.y - 5; j <= cLoc.y + 5; j++) {
+                MapLocation temp = new MapLocation(i, j);
+                if (rc.canSenseLocation(temp)) {
+                    int soupAmt = rc.senseSoup(temp);
+                    if (soupAmt > maxSoup) {
+                        maxSoup = soupAmt;
+                        soupLoc = temp;
+                    }
+                }
+            }
+        }
+        return soupLoc;
+    }
+
+    static boolean minerDoMine() throws GameActionException {
         // Retrieves soup deposit location from rebroadcast
         // Scouts x tiles around soup deposit location, mines soup if found
         // If no soup found in radius, send broadcast indicating deposit might be empty, and move to another deposit
@@ -504,6 +546,100 @@ public strictfp class RobotPlayer {
         // Returns to nearestRefinery once soup storage is full
         // Returns False if no more soup deposits in rebroadcast
 
+        switch (miningState) {
+            case ENROUTE:
+                if (travelQueue.isEmpty()) {
+                    if (locIsNull(lastSoupDeposit)) {
+                        if (soupLocations.size() > 0) {
+                            lastSoupDeposit = soupLocations.get(0);
+                            travelQueue.add(lastSoupDeposit);
+                        }
+                    } else {
+                        travelQueue.add(lastSoupDeposit);
+                    }
+                }
+                if (!travelQueue.isEmpty()) {
+                    if (rc.getLocation().equals(travelQueue.peekFirst())) {
+                        travelQueue.clear();
+                        miningState = MiningState.IN_PROGRESS;
+                    } else {
+                        if (rc.isReady()) {
+                            moveToTarget(travelQueue.peekFirst());
+                        }
+                    }
+                }
+                break;
+
+            case IN_PROGRESS:
+                if (!rc.isReady()) break;
+                if (!tryMine(Direction.CENTER)) {
+                    for (Direction dir : directions) {
+                        if (tryMine(dir)) {
+                            lastSoupDeposit = rc.adjacentLocation(dir);
+                            miningState = MiningState.ENROUTE;
+                            break;
+                        }
+                    }
+                    if (miningState == MiningState.IN_PROGRESS) {
+                        MapLocation nearestNeighbor = minerDoStaticSoupSearch();
+                        if (!locIsNull(nearestNeighbor)) {
+                            lastSoupDeposit = nearestNeighbor;
+                            miningState = MiningState.ENROUTE;
+                        } else {
+                            if (soupLocations.size() > 1) {
+                                MapLocation temp = soupLocations.get(0);
+                                soupLocations.remove(0);
+                                soupLocations.add(temp);
+                                lastSoupDeposit = soupLocations.get(0);
+                                travelQueue.clear();
+                                if (rc.getSoupCarrying() > 0) {
+                                    miningState = MiningState.REFINING;
+                                } else {
+                                    miningState = MiningState.ENROUTE;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (rc.getSoupCarrying() == RobotType.MINER.soupLimit) {
+                    travelQueue.clear();
+                    miningState = MiningState.REFINING;
+                }
+                break;
+
+            case REFINING:
+                MapLocation cLoc = rc.getLocation();
+                if (travelQueue.isEmpty()) {
+                    MapLocation closestRefinery = refineries.get(0);
+                    int closestRefineryDist = cLoc.distanceSquaredTo(closestRefinery);
+                    for (int i = 1; i < refineries.size(); i++) {
+                        if (cLoc.distanceSquaredTo(refineries.get(i)) < closestRefineryDist) {
+                            closestRefinery = refineries.get(i);
+                            closestRefineryDist = cLoc.distanceSquaredTo(refineries.get(i));
+                        }
+                    }
+                    travelQueue.add(closestRefinery);
+                }
+
+                if (!travelQueue.isEmpty()) {
+                    if (cLoc.isWithinDistanceSquared(travelQueue.peekFirst(), 2)) {
+                        if (rc.canDepositSoup(cLoc.directionTo(travelQueue.peekFirst()))) {
+                            rc.depositSoup(cLoc.directionTo(travelQueue.peekFirst()), rc.getSoupCarrying());
+                            travelQueue.clear();
+                            miningState = MiningState.ENROUTE;
+                        }
+                    } else {
+                        if (rc.isReady()) {
+                            moveToTarget(travelQueue.peekFirst());
+                        }
+                    }
+                }
+                break;
+        
+            default:
+                break;
+        }
 
         // ENROUTE TO SOUP LOCATION
 
