@@ -377,7 +377,6 @@ public strictfp class RobotPlayer {
      * @throws GameActionException
      */
     static boolean moveToTarget(MapLocation dest) throws GameActionException {
-
         if (rc.getCooldownTurns() > 0) {
             System.out.println("moveToTarget error: robot on cooldown.");
             return false;
@@ -664,14 +663,17 @@ public strictfp class RobotPlayer {
         }
         // Announce soup findings on blockchain
         // Append soup findings to soupDeposits static variable
+        soupDeposits.addAll(soupLoc);
         return result;
     }
 
     static boolean minerDoMine(MapLocation nearestRefinery) throws GameActionException {
         // Retrieves soup deposit location from rebroadcast
         // Scouts x tiles around soup deposit location, mines soup if found
+        // If no soup found in radius, send broadcast indicating deposit might be empty, and move to another deposit
+        // If HQ receives multiple deposit empty messages, it removes deposit from rebroadcast
         // Returns to nearestRefinery once soup storage is full
-        // Returns False if zero soup has been mined (may indicate deposit is empty)
+        // Returns False if no more soup deposits in rebroadcast
     }
 
     static boolean minerDoDefend(MapLocation point, int radiusFromPoint) throws GameActionException {
