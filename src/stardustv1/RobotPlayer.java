@@ -30,9 +30,16 @@ public strictfp class RobotPlayer {
     static boolean wallBuilt;
 
     static LandscaperState landscaperState = LandscaperState.UNASSIGNED;
-    static int landscaperRound = 300;
+    static int landscaperRound = 160;
+    static int refineryRound = 140;
+    static int droneRound = 600;
 
     static boolean builtDesignSchool = false;
+    static boolean builtRefinery = false;
+    static boolean builtDroneFactory = false;
+    static boolean HQremovedFromRefineryList = false;
+
+    static int landscapersBuilt = 0;
 
     static int turnCount;
     
@@ -45,6 +52,7 @@ public strictfp class RobotPlayer {
     static ArrayList<MapLocation> refineries;
     static ArrayList<MapLocation> soupLocations;
     static MapLocation lastSoupDeposit = new MapLocation(-1, -1);
+    static int refineryAccessAttempts = 0;
 
     static int mapHeight;
     static int mapWidth;
@@ -136,6 +144,9 @@ public strictfp class RobotPlayer {
         if (HQHealth < prevHQHealth) {
             System.out.println("HQ IS UNDER ATTACK!");
         }
+        
+        // Activate built-in net gun
+        runNetGun();
 
         // Builds up to 4 miners if able to
         switch (minerCounter) {
@@ -151,9 +162,12 @@ public strictfp class RobotPlayer {
             case 3:
                 if (tryBuild(RobotType.MINER, Direction.EAST)) minerCounter++;
                 break;
+            case 4:
+                if (tryBuild(RobotType.MINER, Direction.NORTHEAST)) minerCounter++;
+                break;
             default:
                 break;
-        }            
+        }   
     }
 
     static void runMiner() throws GameActionException {
@@ -166,6 +180,36 @@ public strictfp class RobotPlayer {
                     builtDesignSchool = true;
                     break;
                 }
+            }
+        }
+
+        if (!builtRefinery && rc.getRoundNum() > refineryRound) {
+            for (Direction dir: directions) {
+                if (rc.canBuildRobot(RobotType.REFINERY, dir) && !rc.canSenseLocation(localHQ)) {
+                    rc.buildRobot(RobotType.REFINERY, dir);
+                    builtRefinery = true;
+                    int rlocSerial = locSerializer(rc.adjacentLocation(dir));
+                    int[] refMsg = new int[]{230, rlocSerial};
+                    txHandler(refMsg, 2);
+                    break;
+                }
+            }
+        }
+
+        if (!builtDroneFactory && rc.getRoundNum() > droneRound) {
+            for (Direction dir: directions) {
+                if (rc.canBuildRobot(RobotType.FULFILLMENT_CENTER, dir) && !rc.canSenseLocation(localHQ)) {
+                    rc.buildRobot(RobotType.FULFILLMENT_CENTER, dir);
+                    builtDroneFactory = true;
+                    break;
+                }
+            }
+        }
+
+        if (!HQremovedFromRefineryList && rc.getRoundNum() > refineryRound + 50) {
+            if (refineries.contains(localHQ)) {
+                refineries.remove(refineries.indexOf(localHQ));
+                HQremovedFromRefineryList = true;
             }
         }
 
@@ -193,8 +237,10 @@ public strictfp class RobotPlayer {
     static void runDesignSchool() throws GameActionException {
         // Generate landscaper in random direction if able
         for (Direction dir : directions) {
-            if (rc.getRoundNum() > landscaperRound) {
-                tryBuild(RobotType.LANDSCAPER, dir);
+            if (rc.getRoundNum() > landscaperRound && landscapersBuilt < 4) {
+                if (tryBuild(RobotType.LANDSCAPER, dir)) {
+                    landscapersBuilt++;
+                }
             }
         }
     }
@@ -363,11 +409,26 @@ public strictfp class RobotPlayer {
         } else {
             // No close robots, so search for robots within sight radius
             tryMove(randomDirection());
+            for (Direction dir : directions) {
+                if (rc.senseFlooding(rc.adjacentLocation(dir))) {
+                    if (rc.canDropUnit(dir)) {
+                        rc.dropUnit(dir);
+                        System.out.println("I yeeted an enemy robot!");
+                    }
+                }
+            }
         }
     }
 
     static void runNetGun() throws GameActionException {
-
+        RobotInfo[] allRobots = rc.senseNearbyRobots();
+        for (RobotInfo ri : allRobots) {
+            if (ri.team != rc.getTeam()) {
+                if (rc.canShootUnit(ri.ID)) {
+                    rc.shootUnit(ri.ID);
+                }
+            }
+        }
     }
 
     /**
@@ -506,6 +567,7 @@ public strictfp class RobotPlayer {
     }
 
     static void checkBlockchainSoup() throws GameActionException {
+        // Also checks refineries lol
         Transaction[] lastBlock = rc.getBlock(rc.getRoundNum() - 1);
 
         for (Transaction t : lastBlock) {
@@ -520,6 +582,9 @@ public strictfp class RobotPlayer {
                 if (!soupLocationAlreadyEntered) {
                     soupLocations.add(temp);
                 }
+            } else if (t.getMessage()[0] == 230) {
+                MapLocation temp = locDeserializer(t.getMessage()[1]);
+                refineries.add(temp);
             }
         }
     }
@@ -616,6 +681,17 @@ public strictfp class RobotPlayer {
         MapLocation botRight = new MapLocation(mapWidth - 8, 8);
 
         if (minerScouting && travelQueue.isEmpty()) {
+            // Temporary fix to prevent too many design schools from being built
+            if (rc.getLocation().y != localHQ.y) {
+                builtDesignSchool = true;
+                builtRefinery = true;
+                builtDroneFactory = true;
+            } 
+            if (rc.getLocation().x > localHQ.x) {
+                builtRefinery = true;
+                builtDroneFactory = true;
+            }
+
             if (rc.getLocation().y > localHQ.y) {
                 travelQueue.addLast(topLeft);
             } else if (rc.getLocation().y < localHQ.y) {
@@ -783,6 +859,7 @@ public strictfp class RobotPlayer {
             case REFINING:
                 MapLocation cLoc = rc.getLocation();
                 if (travelQueue.isEmpty()) {
+                    refineryAccessAttempts = 0;
                     MapLocation closestRefinery = refineries.get(0);
                     int closestRefineryDist = cLoc.distanceSquaredTo(closestRefinery);
                     for (int i = 1; i < refineries.size(); i++) {
@@ -804,6 +881,10 @@ public strictfp class RobotPlayer {
                     } else {
                         if (rc.isReady()) {
                             moveToTarget(travelQueue.peekFirst());
+                            refineryAccessAttempts++;
+                            if (refineryAccessAttempts > 25) {
+                                travelQueue.clear();
+                            } 
                         }
                     }
                 }

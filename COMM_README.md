@@ -43,6 +43,9 @@
 - Enemy Design School Located
   - 1) Hashed round number (upper 7 digits), identifier (lower 3 digits (**221**))
   - 2) Coordinates of enemy design school (lower 4 digits)
+- Built Refinery
+  - 1) Hashed round number (upper 7 digits), identifier (lower 3 digits (**230**))
+  - 2) Coordinates of refinery (lower 4 digits)
 
 ### Messages from Landscapers
 

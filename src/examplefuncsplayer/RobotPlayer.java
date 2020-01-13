@@ -124,7 +124,14 @@ public strictfp class RobotPlayer {
     }
 
     static void runNetGun() throws GameActionException {
-
+        RobotInfo[] allRobots = rc.senseNearbyRobots();
+        for (RobotInfo ri : allRobots) {
+            if (ri.team != rc.getTeam()) {
+                if (rc.canShootUnit(ri.ID)) {
+                    rc.shootUnit(ri.ID);
+                }
+            }
+        }
     }
 
     /**
