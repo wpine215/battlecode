@@ -6,6 +6,8 @@ import java.util.LinkedList;
 
 import battlecode.common.*;
 
+enum MinerState {UNASSIGNED, SCOUTING, MINING, BUILDING}
+
 public strictfp class RobotPlayer {
     static RobotController rc;
 
@@ -18,10 +20,9 @@ public strictfp class RobotPlayer {
     // Miner specific variables
     static int minerCounter;
     static int scoutTurns;
-    static boolean minerScouting;
+    static boolean minerScouting; // not needed after introducing enums
     static ArrayList<MapLocation> refineries;
     static ArrayList<MapLocation> soupDeposits;
-    static MapLocation lastKnownDeposit;
 
     static int mapHeight;
     static int mapWidth;
@@ -31,8 +32,7 @@ public strictfp class RobotPlayer {
     
     static MapLocation localHQ;
     static MapLocation enemyHQ;
-    static MapLocation previousLocation;
-    static Deque<MapLocation> directionQueue;
+    static Deque<MapLocation> travelQueue;
     static Deque<MapLocation> previousLocations;
     
     static ArrayList<MapLocation> waterBodies;
@@ -50,21 +50,21 @@ public strictfp class RobotPlayer {
 
         turnCount = 0;
 
-        minerScouting = true;
-        minerCounter = 0;
         scoutTurns = 0;
-        lastKnownDeposit = new MapLocation(-1, -1);
+        minerCounter = 0;
+        minerScouting = true;
+        refineries = new ArrayList<>();
+        soupDeposits = new ArrayList<>();
 
-        mapHeight = rc.getMapHeight();
         mapWidth = rc.getMapWidth();
-        directionQueue = new LinkedList<MapLocation>();
-        previousLocations = new LinkedList<MapLocation>();
+        mapHeight = rc.getMapHeight();
+        
+        travelQueue = new LinkedList<>();
+        previousLocations = new LinkedList<>();
 
         System.out.println("I'm a " + rc.getType() + " and I just got created!");
 
-        if (rc.getType() == RobotType.MINER) {
-            localHQ = getHQCoordinates();
-        }
+        if (rc.getType() == RobotType.MINER) localHQ = getHQCoordinates();
 
         while (true) {
             turnCount += 1;
@@ -99,7 +99,7 @@ public strictfp class RobotPlayer {
         // If first round, broadcast HQ coordinates
         if (rc.getRoundNum() == 1) {
             localHQ = rc.getLocation();
-            // refineries.add(localHQ); causes nullPointerException bc not initialized
+            refineries.add(localHQ);
             int localHQSerialized = locSerializer(localHQ);
             int[] gMsg = new int[]{101, localHQSerialized};
             txHandler(gMsg, 5);
@@ -128,33 +128,10 @@ public strictfp class RobotPlayer {
                 break;
             default:
                 break;
-        }
-
-        // for (Direction dir : directions) {
-        //     if (rc.getRobotCount() < 5)
-        //         tryBuild(RobotType.MINER, dir);
-        // }
-            
+        }            
     }
 
     static void runMiner() throws GameActionException {
-        /*
-        tryMove(randomDirection());
-        if (tryMove(randomDirection()))
-            System.out.println("I moved!");
-
-        for (Direction dir : directions)
-            if (tryRefine(dir))
-                System.out.println("I refined soup! " + rc.getTeamSoup());
-        for (Direction dir : directions)
-            if (tryMine(dir))
-                System.out.println("I mined soup! " + rc.getSoupCarrying());
-        */
-        // System.out.println("I'm a Stardust miner with ID " + rc.getID() + " and scouting is " + minerScouting);
-        // if (rc.getID() > 3) minerScouting = false;
-        // if (minerScouting && rc.isReady()) {
-        //     minerScouting = minerDoScout();
-        // }
         if (rc.isReady()) {
             minerDoRandomScout();
         }
@@ -162,7 +139,7 @@ public strictfp class RobotPlayer {
     }
 
     static void runRefinery() throws GameActionException {
-        // System.out.println("Pollution: " + rc.sensePollution(rc.getLocation()));
+
     }
 
     static void runVaporator() throws GameActionException {
@@ -184,7 +161,7 @@ public strictfp class RobotPlayer {
     }
 
     static void runLandscaper() throws GameActionException {
-        // Protect HQ
+
     }
 
     static void runDeliveryDrone() throws GameActionException {
@@ -231,15 +208,6 @@ public strictfp class RobotPlayer {
             if (tryMove(dir))
                 return true;
         return false;
-        // MapLocation loc = rc.getLocation();
-        // if (loc.x < 10 && loc.x < loc.y)
-        //     return tryMove(Direction.EAST);
-        // else if (loc.x < 10)
-        //     return tryMove(Direction.SOUTH);
-        // else if (loc.x > loc.y)
-        //     return tryMove(Direction.WEST);
-        // else
-        //     return tryMove(Direction.NORTH);
     }
 
     /**
@@ -300,28 +268,26 @@ public strictfp class RobotPlayer {
         } else return false;
     }
 
-    static void tryBlockchain() throws GameActionException {
-        if (turnCount < 3) {
-            int[] message = new int[10];
-            for (int i = 0; i < 10; i++) {
-                message[i] = 123;
-            }
-            if (rc.canSubmitTransaction(message, 10))
-                rc.submitTransaction(message, 10);
-        }
-        // System.out.println(rc.getRoundMessages(turnCount-1));
-    }
-
-    /////////////////////////////////////////////////////////
-    // CUSTOM CODE
-    ////////////////////////////////////////////////////////
-
+    /**
+     * Transforms MapLocation object into an integer XXYY
+     * 
+     * @param loc the given MapLocation object
+     * @return integer representing location
+     * @throws GameActionException
+     */
     static int locSerializer(MapLocation loc) throws GameActionException {
         int result = loc.y;
         result += loc.x * 100;
         return result;
     }
 
+    /**
+     * Transforms integer XXYY into a MapLocation object
+     * 
+     * @param loc the given integer corresponding to a location
+     * @return MapLocation object
+     * @throws GameActionException
+     */
     static MapLocation locDeserializer(int loc) throws GameActionException {
         return new MapLocation(loc / 100, loc % 100);
     }
@@ -331,9 +297,7 @@ public strictfp class RobotPlayer {
      * Allows for multiple retries with greater cost.
      * 
      * @param msg[] message integer array to send
-     * @param base the initial cost to attempt sending with
-     * @param multiplier the amount the cost is multiplied by on each retry
-     * @param retries the maximum number of time to retry sending a message
+     * @param cost the amount of soup to attempt sending with
      * @return true if message sent, false otherwise
      * @throws GameActionException
      */
@@ -372,46 +336,6 @@ public strictfp class RobotPlayer {
     //         }
     //     }
     //     */
-    //     int[] resultArr = result.toArray(new int[result.size()]);
-    //     return resultArr;
-    // }
-
-    /**
-     * Queries blockchain for any messages in the current round
-     * pertaining to actions which the landscaper should carry out.
-     * 
-     * @return array of message integers from previous round's block
-     * @throws GameActionException
-     */
-    // static int[] checkBlockchainLandscaper() throws GameActionException {
-    //     int temp;
-    //     ArrayList<integer> result = new ArrayList<>();
-    //     Transaction[] t = rc.getBlock(rc.getRoundNum() - 1);
-    //     /*
-    //     for (Transaction i : t) {
-    //         temp = i.getMessage();
-
-    //         // broadcast of HQ location
-    //         if (temp / 10000 == 199001) {
-    //             result.add(temp % 1990010000);
-    //         }
-    //     }
-    //     */
-    //     int[] resultArr = result.toArray(new int[result.size()]);
-    //     return resultArr;
-    // }
-
-    // static MapLocation[] crudeSoupScan() throws GameActionException {
-    //     // Scan visible radius for soup able to be mined.
-    //     // Keep in mind robots have different scan radiuses.
-    //     // Also keep in mind a full scan is almost never necessary,
-    //     // since assuming the robot just moved, it only needs to scan the
-    //     // new, unscanned tiles which have entered its visible radius due to the movement.
-    //     // This requires the robot instance to keep track of its previous location.
-    //     ArrayList<MapLocation> result = new ArrayList<>();
-
-    //     // to-do finish function
-
     //     int[] resultArr = result.toArray(new int[result.size()]);
     //     return resultArr;
     // }
@@ -479,9 +403,6 @@ public strictfp class RobotPlayer {
                 }
             }
         }
-        // Keep in mind: if the robot enters a dead end or concave obstacle,
-        // it will become trapped. Pathfinding code still needs to account for this.
-        // Maybe modify this to use A* next?
         return false;
     }
 
@@ -510,24 +431,24 @@ public strictfp class RobotPlayer {
         MapLocation botLeft = new MapLocation(8, 8);
         MapLocation botRight = new MapLocation(mapWidth - 8, 8);
 
-        if (directionQueue.isEmpty()) {
+        if (travelQueue.isEmpty()) {
             if (rc.getLocation().y > localHQ.y) {
-                directionQueue.addLast(topLeft);
+                travelQueue.addLast(topLeft);
             } else if (rc.getLocation().y < localHQ.y) {
-                directionQueue.addLast(topRight);
+                travelQueue.addLast(topRight);
             } else if (rc.getLocation().x < localHQ.x) {
-                directionQueue.addLast(botLeft);
+                travelQueue.addLast(botLeft);
             } else {
-                directionQueue.addLast(botRight);
+                travelQueue.addLast(botRight);
             }
         }
 
-        if (rc.getLocation().equals(directionQueue.peekFirst()) || scoutTurns > 50) {
+        if (rc.getLocation().equals(travelQueue.peekFirst()) || scoutTurns > 50) {
             minerScouting = false;
         }
         
         if (minerScouting) {
-            moveToTarget(directionQueue.peekFirst());
+            moveToTarget(travelQueue.peekFirst());
             scoutTurns++;
         } else {
             tryMove(randomDirection());
@@ -560,6 +481,10 @@ public strictfp class RobotPlayer {
         }
 
         if (soupLoc.x != -1 && soupLoc.y != -1) {
+
+            // CHECK WHETHER THIS SOUP DEPOSIT IS WITHIN 5 TILE RADIUS OF EXISTING ENTRIES IN soupDeposits!
+            // IF NOT, THEN ADD IT TO soupDeposits AND BROADCAST ON BLOCKCHAIN
+
             int slocSerial = locSerializer(soupLoc);
             int[] soupMsg = new int[]{201, slocSerial};
             txHandler(soupMsg, 2);
@@ -579,35 +504,34 @@ public strictfp class RobotPlayer {
         // Returns to nearestRefinery once soup storage is full
         // Returns False if no more soup deposits in rebroadcast
 
-        
+
+        // ENROUTE TO SOUP LOCATION
+
+            // IF NO PREVIOUS DEPOSIT, HEAD TO FIRST ENTRY IN DEPOSIT ARRAY
+
+        // AT DEPOSIT LOCATION
+
+            // IF PREVIOUS DEPOSIT LOCATION NOT EMPTY, THEN MINE UNTIL FULL
+
+            // IF DEPOSIT IS EMPTY, BECOMES EMPTY, OR THERE IS NO PREVIOUSLY RECORDED DEPOSIT,
+            // THEN SEARCH THE AREA (~5 tile radius).
+
+            // IF ROBOT IS FULL, HEAD BACK TO CLOSEST REFINERY
+
+        // ENROUTE TO REFINERY
+
+            // CALCULATE CLOSEST REFINERY BY DISTANCE. IF REFINERY NOT FOUND OR CANNOT BE REACHED WITHIN 25 TURNS, HEAD TO HQ
 
         return false;
     }
 
-    static boolean minerDoDefend(MapLocation point, int radiusFromPoint) throws GameActionException {
-        // Positions miner along closest available tile on given radius from point(such as HQ)
-        // Used to build defensive line of robots so enemy can't get through easily
-        // Returns false if the given radius is already fully occupied by defending miners
-
-        return false;
-    }
-
-    static boolean minerBuildNetline(MapLocation[] battlefront) throws GameActionException {
-        // Builds netgun somewhere along line in between battlefront[0] and battlefront[1]
-        // If only one point provided, build single netgun there
-        // Makes sure to leave ample space from other netguns if in a line
-        // Returns false if battlefront is already fully occupied with netguns
-
-        return false;
-    }
-
-    static boolean minerBuildRefinery(MapLocation[] target) throws GameActionException {
+    static boolean minerBuildRefinery(MapLocation target) throws GameActionException {
         // Builds a refinery near soup deposits, but not on top of an existing deposit
 
         return false;
     }
 
-    static boolean minerBuildSchool(MapLocation[] target) throws GameActionException {
+    static boolean minerBuildSchool(MapLocation target) throws GameActionException {
         // Builds a design school near given target (such as an enemy building)
 
         return false;
@@ -615,6 +539,13 @@ public strictfp class RobotPlayer {
 
     static boolean minerBuildDroneFactory(MapLocation[] target) throws GameActionException {
         // Builds a drone factory near given target
+
+        return false;
+    }
+
+    static boolean minerBuildNetgun(MapLocation target) throws GameActionException {
+        // If only one point provided, build single netgun there
+        // Returns false if battlefront is already fully occupied with netguns
 
         return false;
     }
