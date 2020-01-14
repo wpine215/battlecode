@@ -162,9 +162,6 @@ public strictfp class RobotPlayer {
             case 3:
                 if (tryBuild(RobotType.MINER, Direction.EAST)) minerCounter++;
                 break;
-            case 4:
-                if (tryBuild(RobotType.MINER, Direction.NORTHEAST)) minerCounter++;
-                break;
             default:
                 break;
         }   
@@ -213,15 +210,25 @@ public strictfp class RobotPlayer {
             }
         }
 
-        if (soupLocations.size() > 0) {
-            System.out.println("MINER #" + rc.getID() + " in MINING mode - " + miningState);
-            minerDoMine();
-        } else {
-            System.out.println("MINER #" + rc.getID() + " in SCOUTING mode!");
+        if (minerScouting) {
             if (rc.isReady()) {
                 minerDoRandomScout();
             }
+        } else {
+            if (soupLocations.size() > 0) {
+                minerDoMine();
+            }
         }
+
+        // if (soupLocations.size() > 0) {
+        //     System.out.println("MINER #" + rc.getID() + " in MINING mode - " + miningState);
+        //     minerDoMine();
+        // } else {
+        //     System.out.println("MINER #" + rc.getID() + " in SCOUTING mode!");
+        //     if (rc.isReady()) {
+        //         minerDoRandomScout();
+        //     }
+        // }
         
         System.out.println(">>>>>>> BYTECODES USED BY MINER: " + Clock.getBytecodeNum());
     }
@@ -598,18 +605,19 @@ public strictfp class RobotPlayer {
      * @throws GameActionException
      */
     static boolean moveToTarget(MapLocation dest) throws GameActionException {
+        rc.setIndicatorLine(rc.getLocation(), dest, 0, 0, 0);
+
         if (rc.getCooldownTurns() > 0) {
             System.out.println("moveToTarget error: robot on cooldown.");
             return false;
         }
 
-        MapLocation currentLoc = rc.getLocation();
-        if (currentLoc == dest) {
+        if (rc.getLocation().equals(dest)) {
             System.out.println("moveToTarget error: already at dest.");
             return false;
         }
 
-        Direction moveTowards = currentLoc.directionTo(dest);
+        Direction moveTowards = rc.getLocation().directionTo(dest);
 
         if (rc.canMove(moveTowards) && !rc.senseFlooding(rc.adjacentLocation(moveTowards))) {
             rc.move(moveTowards);
@@ -628,29 +636,30 @@ public strictfp class RobotPlayer {
                 if (rc.canMove(d) && !rc.senseFlooding(rc.adjacentLocation(d))) {
                     if(!previousLocations.contains(rc.adjacentLocation(d))) {
                         // Make sure previousLocations doesn't get larger than 10
-                        if (previousLocations.size() >= 10) {
+                        if (previousLocations.size() >= 5) {
                             previousLocations.removeFirst();
                         }
                         // Push back current location to previousLocations, then perform move
-                        previousLocations.addLast(currentLoc);
+                        previousLocations.addLast(rc.getLocation());
                         rc.move(d);
                         return true;
                     }
                 }
             }
         }
-        
+        /*
         if (previousLocations.size() > 0) {
-            Direction backtrack = currentLoc.directionTo(previousLocations.peekLast());
+            Direction backtrack = rc.getLocation().directionTo(previousLocations.peekLast());
             if (rc.canMove(backtrack) && !rc.senseFlooding(rc.adjacentLocation(backtrack))) {
-                if (previousLocations.size() >= 10) {
+                if (previousLocations.size() >= 5) {
                     previousLocations.removeFirst();
-                    previousLocations.addLast(currentLoc);
+                    previousLocations.addLast(rc.getLocation());
                     rc.move(backtrack);
                     return true;
                 }
             }
         }
+        */
         return false;
     }
 
@@ -703,23 +712,22 @@ public strictfp class RobotPlayer {
             }
         }
 
-        if (rc.getLocation().equals(travelQueue.peekFirst()) || scoutTurns > 50) {
+        if (rc.getLocation().equals(travelQueue.peekFirst()) || scoutTurns > 35) {
             minerScouting = false;
             travelQueue.clear();
         }
         
         if (minerScouting) {
-            System.out.println("CONDITION A");
             moveToTarget(travelQueue.peekFirst());
             scoutTurns++;
         } else {
-            System.out.println("CONDITION B");
             tryMove(randomDirection());
         }
         for (Direction dir : directions)
             tryMine(dir);
         if (minerDoBruteSoupSearch()) {
-            System.out.println("FOUND SOME SOUP!");
+            minerScouting = false;
+            travelQueue.clear();
         }
     }
 
@@ -793,7 +801,6 @@ public strictfp class RobotPlayer {
         // If HQ receives multiple deposit empty messages, it removes deposit from rebroadcast
         // Returns to nearestRefinery once soup storage is full
         // Returns False if no more soup deposits in rebroadcast
-
         switch (miningState) {
             case ENROUTE:
                 if (travelQueue.isEmpty()) {
@@ -801,6 +808,8 @@ public strictfp class RobotPlayer {
                         if (soupLocations.size() > 0) {
                             lastSoupDeposit = soupLocations.get(0);
                             travelQueue.add(lastSoupDeposit);
+                        } else {
+                            System.out.println("No soup deposits to visit.");
                         }
                     } else {
                         travelQueue.add(lastSoupDeposit);
@@ -893,23 +902,6 @@ public strictfp class RobotPlayer {
             default:
                 break;
         }
-
-        // ENROUTE TO SOUP LOCATION
-
-            // IF NO PREVIOUS DEPOSIT, HEAD TO FIRST ENTRY IN DEPOSIT ARRAY
-
-        // AT DEPOSIT LOCATION
-
-            // IF PREVIOUS DEPOSIT LOCATION NOT EMPTY, THEN MINE UNTIL FULL
-
-            // IF DEPOSIT IS EMPTY, BECOMES EMPTY, OR THERE IS NO PREVIOUSLY RECORDED DEPOSIT,
-            // THEN SEARCH THE AREA (~5 tile radius).
-
-            // IF ROBOT IS FULL, HEAD BACK TO CLOSEST REFINERY
-
-        // ENROUTE TO REFINERY
-
-            // CALCULATE CLOSEST REFINERY BY DISTANCE. IF REFINERY NOT FOUND OR CANNOT BE REACHED WITHIN 25 TURNS, HEAD TO HQ
 
         return false;
     }
