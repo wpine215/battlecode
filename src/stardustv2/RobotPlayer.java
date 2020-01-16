@@ -5,6 +5,7 @@ import java.util.Deque;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.Random;
+import java.lang.Math;
 
 enum ObstacleDir {
     UNASSIGNED,
@@ -60,8 +61,10 @@ public strictfp class RobotPlayer {
     static int sequentialID;
 
     // Pathfinding variables
+    static MapLocation origin = new MapLocation(-1, -1);
+    static MapLocation dest = new MapLocation(-1, -1);;
     static Direction currentDirection;
-    static ArrayList<MapLocation> currentMLine;
+//    static ArrayList<MapLocation> currentMLine;
     static boolean followingObstacle;
     static MapLocation obstacleEncounteredAt;
     static ObstacleDir obstacleDir;
@@ -113,7 +116,7 @@ public strictfp class RobotPlayer {
         travelQueue = new LinkedList<>();
         locationHistory = new LinkedList<>();
 
-        currentMLine = new ArrayList<>();
+//        currentMLine = new ArrayList<>();
         followingObstacle = false;
         alreadyHitMapEdge = false;
         rewindingToObstacle = false;
@@ -164,6 +167,17 @@ public strictfp class RobotPlayer {
                 minerCount++;
             }
         }
+        localHQ = rc.getLocation();
+        origin = localHQ.add(Direction.NORTH);
+        dest = new MapLocation(1, 1);
+        for (int i = 0; i < mapWidth; i++) {
+            for (int j = 0; j < mapHeight; j++) {
+                MapLocation temp = new MapLocation(i,j);
+                if (locationOnMLine(temp)) {
+                    rc.setIndicatorDot(temp, 100, 100, 100);
+                }
+            }
+        }
     }
 
     static void runMiner() throws GameActionException {
@@ -193,8 +207,11 @@ public strictfp class RobotPlayer {
     }
 
     static void drawPersistentMLine() throws GameActionException {
-        for (MapLocation point : currentMLine) {
-            rc.setIndicatorDot(point, 0, 0, 0);
+//        for (MapLocation point : currentMLine) {
+//            rc.setIndicatorDot(point, 0, 0, 0);
+//        }
+        if (!locIsNull(origin) && !locIsNull(dest)) {
+            rc.setIndicatorLine(origin, dest, 0, 0, 0);
         }
         if (!locIsNull(obstacleEncounteredAt)) {
             rc.setIndicatorDot(obstacleEncounteredAt, 255, 255, 255);
@@ -329,21 +346,27 @@ public strictfp class RobotPlayer {
     }
     */
 
-    static boolean moveToTarget(MapLocation dest) throws GameActionException {
+    static boolean moveToTarget(MapLocation target) throws GameActionException {
         // Returns true if movement in progress
         // Returns false if journey complete or obstacle encountered
         Random rand = new Random();
 
         // If no m-line exists, we haven't performed path calculations yet
-        if (currentMLine.isEmpty()) {
-            currentMLine = getMLine(rc.getLocation(), dest);
+//        if (currentMLine.isEmpty()) {
+//            currentMLine = getMLine(rc.getLocation(), target);
+//            currentDirection = rc.getLocation().directionTo(target);
+//        }
+        if (locIsNull(origin) || locIsNull(dest)) {
+            origin = rc.getLocation();
+            dest = target;
             currentDirection = rc.getLocation().directionTo(dest);
         }
 
         // Already at destination
         if (rc.getLocation().equals(dest)) {
             System.out.println(">>>>> Already at destination!");
-            currentMLine.clear();
+            origin = new MapLocation(-1, -1);
+            dest = origin;
             locationHistory.clear();
             return false;
         }
@@ -351,7 +374,8 @@ public strictfp class RobotPlayer {
         // We encountered obstacle point again
         if (rc.getLocation().equals(obstacleEncounteredAt) && !alreadyHitMapEdge) {
             System.out.println(">>>>> Encountered obstacle point again!");
-            currentMLine.clear();
+            origin = new MapLocation(-1, -1);
+            dest = origin;
             locationHistory.clear();
             return false;
         }
@@ -361,7 +385,8 @@ public strictfp class RobotPlayer {
             if (alreadyHitMapEdge) {
                 System.out.println(">>>>> Hit two map edges!");
                 alreadyHitMapEdge = false;
-                currentMLine.clear();
+                origin = new MapLocation(-1, -1);
+                dest = origin;
                 locationHistory.clear();
                 return false;
             } else {
@@ -383,16 +408,21 @@ public strictfp class RobotPlayer {
             }
 
             // Get next point on m-line and try moving to it
-            MapLocation next = getNextPointOnMLine(rc.getLocation());
-            Direction nextDir = rc.getLocation().directionTo(next);
+//            MapLocation next = getNextPointOnMLine(rc.getLocation());
+//            Direction nextDir = rc.getLocation().directionTo(next);
+
+//            Direction nextDir = rc.getLocation().directionTo(dest);
+            Direction nextDir = mLineDirectionTo(dest);
+            MapLocation next = rc.adjacentLocation(nextDir);
+
             if (rc.canMove(nextDir) && !rc.senseFlooding(next)) {
-                locationHistory.add(rc.getLocation());
+                locationHistoryPush(rc.getLocation());
                 rc.move(nextDir);
                 currentDirection = nextDir;
                 return true;
             } else {
                 // Obstacle at next point on m-line, so do some following
-                locationHistory.add(rc.getLocation());
+                locationHistoryPush(rc.getLocation());
                 obstacleEncounteredAt = rc.getLocation();
                 int initialDir;
                 if (rc.canMove(nextDir.rotateLeft())
@@ -429,26 +459,27 @@ public strictfp class RobotPlayer {
         return false;
     }
 
-    static ArrayList<MapLocation> getMLine(MapLocation src, MapLocation dest) throws GameActionException {
-        System.out.println(">>>>>>>>>>>>>>>> GETTING M-LINE...");
-        ArrayList<MapLocation> result = new ArrayList<>();
-        result.add(src);
-        MapLocation temp = src;
-        System.out.println(">>>>> M-LINE TEMP IS AT " + temp);
-        while(!temp.equals(dest)) {
-            System.out.println(">>>>> M-LINE TEMP IS AT " + temp);
-            System.out.println(">>>>> DEST TEMP IS " + dest);
-            System.out.println(">>>>> DIRECTION TO DEST IS " + temp.directionTo(dest));
-            System.out.println(">>>>> ADJACENT LOCATION IS " + temp.add(temp.directionTo(dest)));
+//    static ArrayList<MapLocation> getMLine(MapLocation src, MapLocation dest) throws GameActionException {
+//        System.out.println(">>>>>>>>>>>>>>>> GETTING M-LINE...");
+//        ArrayList<MapLocation> result = new ArrayList<>();
+//        result.add(src);
+//        MapLocation temp = src;
+//        System.out.println(">>>>> M-LINE TEMP IS AT " + temp);
+//        while(!temp.equals(dest)) {
+//            System.out.println(">>>>> M-LINE TEMP IS AT " + temp);
+//            System.out.println(">>>>> DEST TEMP IS " + dest);
+//            System.out.println(">>>>> DIRECTION TO DEST IS " + temp.directionTo(dest));
+//            System.out.println(">>>>> ADJACENT LOCATION IS " + temp.add(temp.directionTo(dest)));
+//
+//            result.add(temp.add(temp.directionTo(dest)));
+//            temp = temp.add(temp.directionTo(dest));
+//        }
+//        result.add(dest);
+//        System.out.println(">>>>>>>>>>>>>>>> MLINE CALCULATIONS COMPLETE. SIZE:" + result.size());
+//        return result;
+//    }
 
-            result.add(temp.add(temp.directionTo(dest)));
-            temp = temp.add(temp.directionTo(dest));
-        }
-        result.add(dest);
-        System.out.println(">>>>>>>>>>>>>>>> MLINE CALCULATIONS COMPLETE. SIZE:" + result.size());
-        return result;
-    }
-
+    /*
     static MapLocation getNextPointOnMLine(MapLocation loc) throws GameActionException {
         int resultIndex = currentMLine.indexOf(loc) + 1;
         if (resultIndex < currentMLine.size()) {
@@ -456,7 +487,9 @@ public strictfp class RobotPlayer {
         }
         return new MapLocation(-1, -1);
     }
+    */
 
+    /*
     static boolean locationOnMLine(MapLocation loc) throws GameActionException {
         // TODO: OPTIMIZE
         for (MapLocation m : currentMLine) {
@@ -466,15 +499,42 @@ public strictfp class RobotPlayer {
         }
         return false;
     }
+    */
+
+    static boolean locationOnMLine(MapLocation loc) {
+        double sumDist = Math.sqrt(origin.distanceSquaredTo(loc)) + Math.sqrt(dest.distanceSquaredTo(loc));
+        double totalDist = Math.sqrt(origin.distanceSquaredTo(dest));
+        return sumDist <= totalDist + 0.02 && sumDist >= totalDist - 0.02;
+    }
+
+    static Direction mLineDirectionTo(MapLocation loc) throws GameActionException {
+        Direction nextClosest = Direction.CENTER;
+        double nextClosestDeviation = 100;
+        double totalDist = Math.sqrt(rc.getLocation().distanceSquaredTo(loc));
+        for (Direction dir : directions) {
+
+            MapLocation cLoc = rc.getLocation();
+            MapLocation temp = rc.adjacentLocation(dir);
+            double sumDist = Math.sqrt(origin.distanceSquaredTo(temp)) + Math.sqrt(loc.distanceSquaredTo(temp));
+            if (Math.abs(totalDist - sumDist) < nextClosestDeviation && !locationAlreadyVisited(temp)) {
+                nextClosestDeviation = Math.abs(totalDist - sumDist);
+                nextClosest = dir;
+            }
+            System.out.println("DIRECTION " + dir + " HAS DEVIATION VALUE OF " + Math.abs(totalDist - sumDist));
+        }
+        System.out.println("NEXT CLOSEST IS: " + nextClosest);
+        return nextClosest;
+    }
+
+    static void locationHistoryPush(MapLocation loc) {
+        if (locationHistory.size() == 3) {
+            locationHistory.removeLast();
+        }
+        locationHistory.addFirst(loc);
+    }
 
     static boolean locationAlreadyVisited(MapLocation loc) throws GameActionException {
-        // TODO: OPTIMIZE
-        for (MapLocation m : locationHistory) {
-            if (loc.equals(m)) {
-                return true;
-            }
-        }
-        return false;
+        return locationHistory.contains(loc);
     }
 
     static boolean isLocationMapEdge(MapLocation loc) throws GameActionException {
@@ -501,22 +561,22 @@ public strictfp class RobotPlayer {
         }
 
         // TODO: OPTIMIZE (uses 88 + 8 * (size of currentMLine + locationHistory)
-        for (Direction dir : directions) {
-            if (rc.canMove(dir)
-                    && !rc.senseFlooding(rc.adjacentLocation(dir))
-                    && locationOnMLine(rc.adjacentLocation(dir))
-                    && !locationAlreadyVisited(rc.adjacentLocation(dir))) {
-                rc.move(dir);
-                currentDirection = dir;
-                return true;
-            }
-        }
+//        for (Direction dir : directions) {
+//            if (rc.canMove(dir)
+//                    && !rc.senseFlooding(rc.adjacentLocation(dir))
+//                    && locationOnMLine(rc.adjacentLocation(dir))
+//                    && !locationAlreadyVisited(rc.adjacentLocation(dir))) {
+//                rc.move(dir);
+//                currentDirection = dir;
+//                return true;
+//            }
+//        }
         // TODO: OPTIMIZE (uses 88 + 8 * (size of currentMLine))
         for (Direction dir : moveQueue) {
             if (rc.canMove(dir) && !rc.senseFlooding(rc.adjacentLocation(dir))) {
+                rc.setIndicatorDot(rc.adjacentLocation(dir), 0, 100, 255);
                 rc.move(dir);
                 currentDirection = dir;
-                rc.setIndicatorDot(rc.adjacentLocation(dir), 0, 100, 255);
                 return true;
             } else {
                 rc.setIndicatorDot(rc.adjacentLocation(dir), 255, 100, 50);
@@ -545,23 +605,23 @@ public strictfp class RobotPlayer {
         }
 
         // TODO: OPTIMIZE (uses 88 + 8 * (size of currentMLine + locationHistory)
-        for (Direction dir : directions) {
-            if (rc.canMove(dir)
-                    && !rc.senseFlooding(rc.adjacentLocation(dir))
-                    && locationOnMLine(rc.adjacentLocation(dir))
-                    && !locationAlreadyVisited(rc.adjacentLocation(dir))) {
-                rc.move(dir);
-                currentDirection = dir;
-                return true;
-            }
-        }
+//        for (Direction dir : directions) {
+//            if (rc.canMove(dir)
+//                    && !rc.senseFlooding(rc.adjacentLocation(dir))
+//                    && locationOnMLine(rc.adjacentLocation(dir))
+//                    && !locationAlreadyVisited(rc.adjacentLocation(dir))) {
+//                rc.move(dir);
+//                currentDirection = dir;
+//                return true;
+//            }
+//        }
 
         // TODO: OPTIMIZE (uses 88 + 8 * (size of currentMLine))
         for (Direction dir: moveQueue) {
             if (rc.canMove(dir) && !rc.senseFlooding(rc.adjacentLocation(dir))) {
+                rc.setIndicatorDot(rc.adjacentLocation(dir), 0, 100, 255);
                 rc.move(dir);
                 currentDirection = dir;
-                rc.setIndicatorDot(rc.adjacentLocation(dir), 0, 100, 255);
                 return true;
             } else {
                 rc.setIndicatorDot(rc.adjacentLocation(dir), 255, 100, 50);
@@ -569,8 +629,6 @@ public strictfp class RobotPlayer {
         }
         return false;
     }
-
-
 
 
     //////////////////////////////////////////////////
