@@ -5,6 +5,8 @@ import java.util.Deque;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.Random;
+import java.util.Set;
+import java.util.HashSet;
 
 enum ObstacleDir {
     UNASSIGNED,
@@ -56,12 +58,15 @@ public strictfp class RobotPlayer {
     static MapLocation localHQ;
     static MapLocation enemyHQ;
     static Deque<MapLocation> travelQueue;
-    static Deque<MapLocation> locationHistory; // only location history on ML line
+
+    static Set<MapLocation> locationHistory = new HashSet<MapLocation>(); // only location history on ML line
+
     static int sequentialID;
 
     // Pathfinding variables
     static Direction currentDirection;
     static ArrayList<MapLocation> currentMLine;
+    static Set<MapLocation> currentMLineSet = new HashSet<MapLocation>();
     static boolean followingObstacle;
     static MapLocation obstacleEncounteredAt;
     static ObstacleDir obstacleDir;
@@ -111,7 +116,7 @@ public strictfp class RobotPlayer {
         refineries = new ArrayList<>();
         soup = new ArrayList<>();
         travelQueue = new LinkedList<>();
-        locationHistory = new LinkedList<>();
+
 
         currentMLine = new ArrayList<>();
         followingObstacle = false;
@@ -336,7 +341,7 @@ public strictfp class RobotPlayer {
 
         // If no m-line exists, we haven't performed path calculations yet
         if (currentMLine.isEmpty()) {
-            currentMLine = getMLine(rc.getLocation(), dest);
+            getMLine(rc.getLocation(), dest);
             currentDirection = rc.getLocation().directionTo(dest);
         }
 
@@ -344,6 +349,7 @@ public strictfp class RobotPlayer {
         if (rc.getLocation().equals(dest)) {
             System.out.println(">>>>> Already at destination!");
             currentMLine.clear();
+            currentMLineSet.clear();
             locationHistory.clear();
             return false;
         }
@@ -352,6 +358,7 @@ public strictfp class RobotPlayer {
         if (rc.getLocation().equals(obstacleEncounteredAt) && !alreadyHitMapEdge) {
             System.out.println(">>>>> Encountered obstacle point again!");
             currentMLine.clear();
+            currentMLineSet.clear();
             locationHistory.clear();
             return false;
         }
@@ -362,6 +369,7 @@ public strictfp class RobotPlayer {
                 System.out.println(">>>>> Hit two map edges!");
                 alreadyHitMapEdge = false;
                 currentMLine.clear();
+                currentMLineSet.clear();
                 locationHistory.clear();
                 return false;
             } else {
@@ -429,24 +437,17 @@ public strictfp class RobotPlayer {
         return false;
     }
 
-    static ArrayList<MapLocation> getMLine(MapLocation src, MapLocation dest) throws GameActionException {
-        System.out.println(">>>>>>>>>>>>>>>> GETTING M-LINE...");
-        ArrayList<MapLocation> result = new ArrayList<>();
-        result.add(src);
+    static void getMLine(MapLocation src, MapLocation dest) throws GameActionException {
+        currentMLine.add(src);
+        currentMLineSet.add(src);
         MapLocation temp = src;
-        System.out.println(">>>>> M-LINE TEMP IS AT " + temp);
         while(!temp.equals(dest)) {
-            System.out.println(">>>>> M-LINE TEMP IS AT " + temp);
-            System.out.println(">>>>> DEST TEMP IS " + dest);
-            System.out.println(">>>>> DIRECTION TO DEST IS " + temp.directionTo(dest));
-            System.out.println(">>>>> ADJACENT LOCATION IS " + temp.add(temp.directionTo(dest)));
-
-            result.add(temp.add(temp.directionTo(dest)));
+            currentMLine.add(temp.add(temp.directionTo(dest)));
+            currentMLineSet.add(temp.add(temp.directionTo(dest)));
             temp = temp.add(temp.directionTo(dest));
         }
-        result.add(dest);
-        System.out.println(">>>>>>>>>>>>>>>> MLINE CALCULATIONS COMPLETE. SIZE:" + result.size());
-        return result;
+        currentMLine.add(dest);
+        currentMLineSet.add(dest);
     }
 
     static MapLocation getNextPointOnMLine(MapLocation loc) throws GameActionException {
@@ -459,22 +460,12 @@ public strictfp class RobotPlayer {
 
     static boolean locationOnMLine(MapLocation loc) throws GameActionException {
         // TODO: OPTIMIZE
-        for (MapLocation m : currentMLine) {
-            if (loc.equals(m)) {
-                return true;
-            }
-        }
-        return false;
+        return currentMLineSet.contains(loc);
     }
 
     static boolean locationAlreadyVisited(MapLocation loc) throws GameActionException {
         // TODO: OPTIMIZE
-        for (MapLocation m : locationHistory) {
-            if (loc.equals(m)) {
-                return true;
-            }
-        }
-        return false;
+        return locationHistory.contains(loc);
     }
 
     static boolean isLocationMapEdge(MapLocation loc) throws GameActionException {
