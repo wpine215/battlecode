@@ -165,7 +165,7 @@ public strictfp class RobotPlayer {
         // Build and assign miners
         // Send commands to build drone centers/refineries/etc
         for (Direction dir : directions) {
-            if (minerCount < 1 && tryBuild(RobotType.MINER, dir)) {
+            if (minerCount < 4 && tryBuild(RobotType.MINER, dir)) {
                 minerCount++;
             }
         }
@@ -314,26 +314,6 @@ public strictfp class RobotPlayer {
     // PATHFINDING FUNCTIONS
     //////////////////////////////////////////////////
 
-    /*
-    private static class vector2D {
-        MapLocation point;
-        Direction dir;
-
-        vector2D(MapLocation p, Direction d) {
-            point = p;
-            dir = d;
-        }
-
-        static MapLocation getLocation() {
-            return point;
-        }
-
-        static Direction getDirection() {
-            return dir;
-        }
-    }
-    */
-
     static boolean moveToTarget(MapLocation dest) throws GameActionException {
         // Returns true if movement in progress
         // Returns false if journey complete or obstacle encountered
@@ -374,6 +354,7 @@ public strictfp class RobotPlayer {
                 return false;
             } else {
                 alreadyHitMapEdge = true;
+                currentDirection = currentDirection.opposite();
                 if (obstacleDir == ObstacleDir.LEFT) {
                     obstacleDir = ObstacleDir.RIGHT;
                 } else {
@@ -383,7 +364,7 @@ public strictfp class RobotPlayer {
         }
 
         // If we're on m-line, try moving directly to target
-        if (locationOnMLine(rc.getLocation())) {
+        if (locationOnMLine(rc.getLocation()) && !alreadyHitMapEdge) {
             // We have found the m-line again after following obstacle
             if (!locIsNull(obstacleEncounteredAt)) {
                 obstacleEncounteredAt = new MapLocation(-1, -1);
@@ -459,17 +440,15 @@ public strictfp class RobotPlayer {
     }
 
     static boolean locationOnMLine(MapLocation loc) throws GameActionException {
-        // TODO: OPTIMIZE
         return currentMLineSet.contains(loc);
     }
 
     static boolean locationAlreadyVisited(MapLocation loc) throws GameActionException {
-        // TODO: OPTIMIZE
         return locationHistory.contains(loc);
     }
 
     static boolean isLocationMapEdge(MapLocation loc) throws GameActionException {
-        return loc.x == 0 || loc.x == mapWidth || loc.y == 0 || loc.y == mapHeight;
+        return loc.x == 0 || loc.x == mapWidth-1 || loc.y == 0 || loc.y == mapHeight-1;
     }
 
     static boolean followObstacleLeft(boolean firstTime) throws GameActionException {
@@ -491,7 +470,6 @@ public strictfp class RobotPlayer {
             moveQueue[1] = currentDirection;
         }
 
-        // TODO: OPTIMIZE (uses 88 + 8 * (size of currentMLine + locationHistory)
         for (Direction dir : directions) {
             if (rc.canMove(dir)
                     && !rc.senseFlooding(rc.adjacentLocation(dir))
@@ -502,7 +480,7 @@ public strictfp class RobotPlayer {
                 return true;
             }
         }
-        // TODO: OPTIMIZE (uses 88 + 8 * (size of currentMLine))
+
         for (Direction dir : moveQueue) {
             if (rc.canMove(dir) && !rc.senseFlooding(rc.adjacentLocation(dir))) {
                 rc.move(dir);
@@ -535,7 +513,6 @@ public strictfp class RobotPlayer {
             moveQueue[1] = currentDirection;
         }
 
-        // TODO: OPTIMIZE (uses 88 + 8 * (size of currentMLine + locationHistory)
         for (Direction dir : directions) {
             if (rc.canMove(dir)
                     && !rc.senseFlooding(rc.adjacentLocation(dir))
@@ -547,7 +524,6 @@ public strictfp class RobotPlayer {
             }
         }
 
-        // TODO: OPTIMIZE (uses 88 + 8 * (size of currentMLine))
         for (Direction dir: moveQueue) {
             if (rc.canMove(dir) && !rc.senseFlooding(rc.adjacentLocation(dir))) {
                 rc.move(dir);
@@ -560,8 +536,6 @@ public strictfp class RobotPlayer {
         }
         return false;
     }
-
-
 
 
     //////////////////////////////////////////////////
