@@ -4,6 +4,13 @@ import battlecode.common.*;
 import java.util.Deque;
 import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.Random;
+
+enum ObstacleDir {
+    UNASSIGNED,
+    LEFT,
+    RIGHT
+}
 
 enum MinerState {
     SCOUTING,
@@ -49,11 +56,22 @@ public strictfp class RobotPlayer {
     static MapLocation localHQ;
     static MapLocation enemyHQ;
     static Deque<MapLocation> travelQueue;
-    static Deque<MapLocation> locationHistory;
+    static Deque<MapLocation> locationHistory; // only location history on ML line
+    static int sequentialID;
+
+    // Pathfinding variables
+    static Direction currentDirection;
+    static ArrayList<MapLocation> currentMLine;
+    static boolean followingObstacle;
+    static MapLocation obstacleEncounteredAt;
+    static ObstacleDir obstacleDir;
+    static boolean alreadyHitMapEdge;
+    static boolean rewindingToObstacle;
 
     // HQ-specific variables
     static int HQHealth = 50;
     static int HQElevation;
+    static int minerCount = 0;
 
     // Miner-specific variables
     static MinerState minerState;
@@ -95,6 +113,17 @@ public strictfp class RobotPlayer {
         travelQueue = new LinkedList<>();
         locationHistory = new LinkedList<>();
 
+        currentMLine = new ArrayList<>();
+        followingObstacle = false;
+        alreadyHitMapEdge = false;
+        rewindingToObstacle = false;
+        obstacleEncounteredAt = new MapLocation(-1, -1);
+        obstacleDir = ObstacleDir.UNASSIGNED;
+
+        // TEMPORARY
+        minerState = MinerState.SCOUTING;
+        sequentialID = rc.getRobotCount();
+
         System.out.println("I'm a " + rc.getType() + " and I just got created!");
 
         while (true) {
@@ -113,7 +142,6 @@ public strictfp class RobotPlayer {
                     case NET_GUN:            runNetGun();            break;
                 }
 
-                // Clock.yield() makes the robot wait until the next turn, then it will perform this loop again
                 Clock.yield();
 
             } catch (Exception e) {
@@ -131,10 +159,46 @@ public strictfp class RobotPlayer {
         // Handle netgun
         // Build and assign miners
         // Send commands to build drone centers/refineries/etc
+        for (Direction dir : directions) {
+            if (minerCount < 1 && tryBuild(RobotType.MINER, dir)) {
+                minerCount++;
+            }
+        }
     }
 
     static void runMiner() throws GameActionException {
+        drawPersistentMLine();
+        if (minerState == MinerState.SCOUTING && rc.isReady()) {
+            MapLocation scoutTo;
+            switch (sequentialID) {
+                case 2:
+                    scoutTo = new MapLocation(1, 1);
+                    break;
+                case 3:
+                    scoutTo = new MapLocation(1, mapHeight - 1);
+                    break;
+                case 4:
+                    scoutTo = new MapLocation(mapWidth - 1, 1);
+                    break;
+                default:
+                    scoutTo = new MapLocation(mapWidth - 1, mapHeight - 1);
+                    break;
+            }
+            System.out.println("Miner " + sequentialID + " attempting to move to location " + scoutTo);
+            if (!moveToTarget(scoutTo)) {
+                System.out.println("Miner " + sequentialID + " movement unsuccessful");
+                minerState = MinerState.MINING;
+            }
+        }
+    }
 
+    static void drawPersistentMLine() throws GameActionException {
+        for (MapLocation point : currentMLine) {
+            rc.setIndicatorDot(point, 0, 0, 0);
+        }
+        if (!locIsNull(obstacleEncounteredAt)) {
+            rc.setIndicatorDot(obstacleEncounteredAt, 255, 255, 255);
+        }
     }
 
     static void runRefinery() throws GameActionException {
@@ -216,8 +280,7 @@ public strictfp class RobotPlayer {
     }
 
     static boolean locIsNull(MapLocation loc) throws GameActionException {
-        if (loc.x < 0 || loc.y < 0) return true;
-        return false;
+        return loc.x < 0 || loc.y < 0;
     }
 
     static boolean txSend(int[] msg, int cost) throws GameActionException {
@@ -230,9 +293,9 @@ public strictfp class RobotPlayer {
         return false;
     }
 
-    static int[] txRecv(int code, int round) {
-        // Returns transactions that had given message code in given round
-    }
+//    static int[] txRecv(int code, int round) {
+//        // Returns transactions that had given message code in given round
+//    }
 
     static void retrieveHQCoordinates() throws GameActionException {
 
@@ -242,13 +305,295 @@ public strictfp class RobotPlayer {
 
     }
 
+    //////////////////////////////////////////////////
+    // PATHFINDING FUNCTIONS
+    //////////////////////////////////////////////////
+
+    /*
+    private static class vector2D {
+        MapLocation point;
+        Direction dir;
+
+        vector2D(MapLocation p, Direction d) {
+            point = p;
+            dir = d;
+        }
+
+        static MapLocation getLocation() {
+            return point;
+        }
+
+        static Direction getDirection() {
+            return dir;
+        }
+    }
+    */
+
     static boolean moveToTarget(MapLocation dest) throws GameActionException {
         // Returns true if movement in progress
         // Returns false if journey complete or obstacle encountered
+        Random rand = new Random();
+
+        // If no m-line exists, we haven't performed path calculations yet
+        if (currentMLine.isEmpty()) {
+            currentMLine = getMLine(rc.getLocation(), dest);
+            currentDirection = rc.getLocation().directionTo(dest);
+        }
+
+        // Already at destination
+        if (rc.getLocation().equals(dest)) {
+            System.out.println(">>>>> Already at destination!");
+            currentMLine.clear();
+            locationHistory.clear();
+            return false;
+        }
+
+        // We encountered obstacle point again
+        if (rc.getLocation().equals(obstacleEncounteredAt) && !alreadyHitMapEdge) {
+            System.out.println(">>>>> Encountered obstacle point again!");
+            currentMLine.clear();
+            locationHistory.clear();
+            return false;
+        }
+
+        // We encountered a map edge
+        if (isLocationMapEdge(rc.getLocation())) {
+            if (alreadyHitMapEdge) {
+                System.out.println(">>>>> Hit two map edges!");
+                alreadyHitMapEdge = false;
+                currentMLine.clear();
+                locationHistory.clear();
+                return false;
+            } else {
+                alreadyHitMapEdge = true;
+                if (obstacleDir == ObstacleDir.LEFT) {
+                    obstacleDir = ObstacleDir.RIGHT;
+                } else {
+                    obstacleDir = ObstacleDir.LEFT;
+                }
+            }
+        }
+
+        // If we're on m-line, try moving directly to target
+        if (locationOnMLine(rc.getLocation())) {
+            // We have found the m-line again after following obstacle
+            if (!locIsNull(obstacleEncounteredAt)) {
+                obstacleEncounteredAt = new MapLocation(-1, -1);
+                obstacleDir = ObstacleDir.UNASSIGNED;
+            }
+
+            // Get next point on m-line and try moving to it
+            MapLocation next = getNextPointOnMLine(rc.getLocation());
+            Direction nextDir = rc.getLocation().directionTo(next);
+            if (rc.canMove(nextDir) && !rc.senseFlooding(next)) {
+                locationHistory.add(rc.getLocation());
+                rc.move(nextDir);
+                currentDirection = nextDir;
+                return true;
+            } else {
+                // Obstacle at next point on m-line, so do some following
+                locationHistory.add(rc.getLocation());
+                obstacleEncounteredAt = rc.getLocation();
+                int initialDir;
+                if (rc.canMove(nextDir.rotateLeft())
+                        && !rc.senseFlooding(rc.adjacentLocation(nextDir.rotateLeft()))) {
+                    initialDir = 0;
+                } else if (rc.canMove(nextDir.rotateRight())
+                        && !rc.senseFlooding(rc.adjacentLocation(nextDir.rotateRight()))) {
+                    initialDir = 1;
+                } else {
+                    initialDir = rand.nextInt(2);
+                }
+
+                if (initialDir == 0) {
+                    System.out.println(">>>>> Starting to follow obstacle left!");
+                    obstacleDir = ObstacleDir.LEFT;
+                    return followObstacleLeft(true);
+                } else {
+                    System.out.println(">>>>> Starting to follow obstacle right!");
+                    obstacleDir = ObstacleDir.RIGHT;
+                    return followObstacleRight(true);
+                }
+
+            }
+        } else {
+            // Still following obstacle
+            if (obstacleDir == ObstacleDir.LEFT) {
+                System.out.println(">>>>> STILL following obstacle left!");
+                return followObstacleLeft(false);
+            } else if (obstacleDir == ObstacleDir.RIGHT) {
+                System.out.println(">>>>> STILL following obstacle right!");
+                return followObstacleRight(false);
+            }
+        }
+        return false;
+    }
+
+    static ArrayList<MapLocation> getMLine(MapLocation src, MapLocation dest) throws GameActionException {
+        System.out.println(">>>>>>>>>>>>>>>> GETTING M-LINE...");
+        ArrayList<MapLocation> result = new ArrayList<>();
+        result.add(src);
+        MapLocation temp = src;
+        System.out.println(">>>>> M-LINE TEMP IS AT " + temp);
+        while(!temp.equals(dest)) {
+            System.out.println(">>>>> M-LINE TEMP IS AT " + temp);
+            System.out.println(">>>>> DEST TEMP IS " + dest);
+            System.out.println(">>>>> DIRECTION TO DEST IS " + temp.directionTo(dest));
+            System.out.println(">>>>> ADJACENT LOCATION IS " + temp.add(temp.directionTo(dest)));
+
+            result.add(temp.add(temp.directionTo(dest)));
+            temp = temp.add(temp.directionTo(dest));
+        }
+        result.add(dest);
+        System.out.println(">>>>>>>>>>>>>>>> MLINE CALCULATIONS COMPLETE. SIZE:" + result.size());
+        return result;
+    }
+
+    static MapLocation getNextPointOnMLine(MapLocation loc) throws GameActionException {
+        int resultIndex = currentMLine.indexOf(loc) + 1;
+        if (resultIndex < currentMLine.size()) {
+            return currentMLine.get(resultIndex);
+        }
+        return new MapLocation(-1, -1);
+    }
+
+    static boolean locationOnMLine(MapLocation loc) throws GameActionException {
+        // TODO: OPTIMIZE
+        for (MapLocation m : currentMLine) {
+            if (loc.equals(m)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static boolean locationAlreadyVisited(MapLocation loc) throws GameActionException {
+        // TODO: OPTIMIZE
+        for (MapLocation m : locationHistory) {
+            if (loc.equals(m)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static boolean isLocationMapEdge(MapLocation loc) throws GameActionException {
+        return loc.x == 0 || loc.x == mapWidth || loc.y == 0 || loc.y == mapHeight;
+    }
+
+    static boolean followObstacleLeft(boolean firstTime) throws GameActionException {
+        if (currentDirection == null) {
+            return false;
+        }
+        Direction[] moveQueue = new Direction[7];
+        moveQueue[2] = currentDirection;
+        moveQueue[1] = moveQueue[2].rotateRight();
+        moveQueue[0] = moveQueue[1].rotateRight();
+        moveQueue[3] = moveQueue[2].rotateLeft();
+        moveQueue[4] = moveQueue[3].rotateLeft();
+        moveQueue[5] = moveQueue[4].rotateLeft();
+        moveQueue[6] = moveQueue[5].rotateLeft();
+
+        if (firstTime) {
+            // override opposite diagonal if first time
+            moveQueue[0] = currentDirection;
+            moveQueue[1] = currentDirection;
+        }
+
+        // TODO: OPTIMIZE (uses 88 + 8 * (size of currentMLine + locationHistory)
+        for (Direction dir : directions) {
+            if (rc.canMove(dir)
+                    && !rc.senseFlooding(rc.adjacentLocation(dir))
+                    && locationOnMLine(rc.adjacentLocation(dir))
+                    && !locationAlreadyVisited(rc.adjacentLocation(dir))) {
+                rc.move(dir);
+                currentDirection = dir;
+                return true;
+            }
+        }
+        // TODO: OPTIMIZE (uses 88 + 8 * (size of currentMLine))
+        for (Direction dir : moveQueue) {
+            if (rc.canMove(dir) && !rc.senseFlooding(rc.adjacentLocation(dir))) {
+                rc.move(dir);
+                currentDirection = dir;
+                rc.setIndicatorDot(rc.adjacentLocation(dir), 0, 100, 255);
+                return true;
+            } else {
+                rc.setIndicatorDot(rc.adjacentLocation(dir), 255, 100, 50);
+            }
+        }
+        return false;
+    }
+
+    static boolean followObstacleRight(boolean firstTime) throws GameActionException {
+        if (currentDirection == null) {
+            return false;
+        }
+        Direction[] moveQueue = new Direction[7];
+        moveQueue[2] = currentDirection;
+        moveQueue[1] = moveQueue[2].rotateLeft();
+        moveQueue[0] = moveQueue[1].rotateLeft();
+        moveQueue[3] = moveQueue[2].rotateRight();
+        moveQueue[4] = moveQueue[3].rotateRight();
+        moveQueue[5] = moveQueue[4].rotateRight();
+        moveQueue[6] = moveQueue[5].rotateRight();
+
+        if (firstTime) {
+            // override opposite diagonal if first time
+            moveQueue[0] = currentDirection;
+            moveQueue[1] = currentDirection;
+        }
+
+        // TODO: OPTIMIZE (uses 88 + 8 * (size of currentMLine + locationHistory)
+        for (Direction dir : directions) {
+            if (rc.canMove(dir)
+                    && !rc.senseFlooding(rc.adjacentLocation(dir))
+                    && locationOnMLine(rc.adjacentLocation(dir))
+                    && !locationAlreadyVisited(rc.adjacentLocation(dir))) {
+                rc.move(dir);
+                currentDirection = dir;
+                return true;
+            }
+        }
+
+        // TODO: OPTIMIZE (uses 88 + 8 * (size of currentMLine))
+        for (Direction dir: moveQueue) {
+            if (rc.canMove(dir) && !rc.senseFlooding(rc.adjacentLocation(dir))) {
+                rc.move(dir);
+                currentDirection = dir;
+                rc.setIndicatorDot(rc.adjacentLocation(dir), 0, 100, 255);
+                return true;
+            } else {
+                rc.setIndicatorDot(rc.adjacentLocation(dir), 255, 100, 50);
+            }
+        }
+        return false;
     }
 
 
+
+
+    //////////////////////////////////////////////////
     // MINER FUNCTIONS
-    
+    //////////////////////////////////////////////////
+
+
+
+    //////////////////////////////////////////////////
+    // LANDSCAPER FUNCTIONS
+    //////////////////////////////////////////////////
+
+    static void assignLandscaper() throws GameActionException {
+
+    }
+
+    static void runOffenseLandscaper() throws GameActionException {
+
+    }
+
+    static void runDefenseLandscaper() throws GameActionException {
+
+    }
+
 
 }
