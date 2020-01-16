@@ -52,7 +52,7 @@ public strictfp class Pathfinding {
         locationHistory = new HashSet<>();
     }
 
-    public static boolean travelTo(MapLocation dest) throws GameActionException {
+    public boolean travelTo(MapLocation dest) throws GameActionException {
         // Returns true if movement in progress
         // Returns false if journey complete or obstacle encountered
         Random rand = new Random();
@@ -164,7 +164,7 @@ public strictfp class Pathfinding {
         return loc.x < 0 || loc.y < 0;
     }
 
-    public static void drawPersistentMLine() throws GameActionException {
+    public void drawPersistentMLine() throws GameActionException {
         for (MapLocation point : currentMLine) {
             rc.setIndicatorDot(point, 0, 0, 0);
         }
@@ -173,7 +173,7 @@ public strictfp class Pathfinding {
         }
     }
 
-    private static void getMLine(MapLocation src, MapLocation dest) throws GameActionException {
+    private void getMLine(MapLocation src, MapLocation dest) throws GameActionException {
         currentMLine.add(src);
         currentMLineSet.add(src);
         MapLocation temp = src;
@@ -186,7 +186,7 @@ public strictfp class Pathfinding {
         currentMLineSet.add(dest);
     }
 
-    private static MapLocation getNextPointOnMLine(MapLocation loc) throws GameActionException {
+    private MapLocation getNextPointOnMLine(MapLocation loc) throws GameActionException {
         int resultIndex = currentMLine.indexOf(loc) + 1;
         if (resultIndex < currentMLine.size()) {
             return currentMLine.get(resultIndex);
@@ -194,15 +194,15 @@ public strictfp class Pathfinding {
         return new MapLocation(-1, -1);
     }
 
-    private static boolean locationOnMLine(MapLocation loc) throws GameActionException {
+    private boolean locationOnMLine(MapLocation loc) throws GameActionException {
         return currentMLineSet.contains(loc);
     }
 
-    private static boolean locationAlreadyVisited(MapLocation loc) throws GameActionException {
+    private boolean locationAlreadyVisited(MapLocation loc) throws GameActionException {
         return locationHistory.contains(loc);
     }
 
-    private static boolean followObstacleLeft(boolean firstTime) throws GameActionException {
+    private boolean followObstacleLeft(boolean firstTime) throws GameActionException {
         if (currentDirection == null) {
             return false;
         }
@@ -245,7 +245,7 @@ public strictfp class Pathfinding {
         return false;
     }
 
-    private static boolean followObstacleRight(boolean firstTime) throws GameActionException {
+    private boolean followObstacleRight(boolean firstTime) throws GameActionException {
         if (currentDirection == null) {
             return false;
         }
