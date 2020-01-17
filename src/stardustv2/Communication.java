@@ -3,7 +3,6 @@ package stardustv2;
 import battlecode.common.*;
 
 import java.util.ArrayList;
-import java.util.Map;
 
 public strictfp class Communication {
     static RobotController rc;
@@ -14,6 +13,12 @@ public strictfp class Communication {
 
     final static int CODE_GENESIS = 101;
     final static int CODE_REBROADCAST = 102;
+
+    final static int CODE_SOUP_LOCATED = 201;
+    final static int SOUP_BROADCAST_COST = 1;
+
+    final static int REBROADCAST_MULTIPLIER = 10;
+    final static int REBROADCAST_OFFSET = 5;
 
     public Communication(RobotController rc) {
         Communication.rc = rc;
@@ -32,7 +37,29 @@ public strictfp class Communication {
         return false;
     }
 
+    public void broadcastSoup(int sector) throws GameActionException {
+        int firstChunk = (generateValidationInt(rc.getRoundNum()) * LOWER_CODE_BITS) + CODE_SOUP_LOCATED;
+        int[] spMsg = new int[]{firstChunk, sector, 0, 0, 0, 0, 0};
+        send(spMsg, SOUP_BROADCAST_COST);
+    }
+
+    public void broadcastEmptySoup(int sector) throws GameActionException {
+        System.out.println("Sector " + sector + " is out of soup!");
+    }
+
+    public ArrayList<Integer> checkSoupBroadcast() throws GameActionException {
+        ArrayList<Integer> result = new ArrayList<>();
+        Transaction[] currentBlock = rc.getBlock(rc.getRoundNum() - 1);
+        for (Transaction t : currentBlock) {
+            if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_SOUP_LOCATED) {
+                result.add(t.getMessage()[1]);
+            }
+        }
+        return result;
+    }
+
     public MapLocation getHQCoordinates() throws GameActionException {
+        if (rc.getRoundNum() <= 1) return rc.getLocation();
         Transaction[] genesisBlock = rc.getBlock(1);
         for (Transaction t : genesisBlock) {
             if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_GENESIS) {

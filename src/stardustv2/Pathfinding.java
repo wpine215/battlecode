@@ -52,6 +52,18 @@ public strictfp class Pathfinding {
         locationHistory = new HashSet<>();
     }
 
+    public void reset() throws GameActionException {
+        currentMLine.clear();
+        currentMLineSet.clear();
+        locationHistory.clear();
+        currentDirection = Direction.CENTER;
+        obstacleDir = ObstacleDir.UNASSIGNED;
+        obstacleEncounteredAt = new MapLocation(-1, -1);
+        followingObstacle = false;
+        alreadyHitMapEdge = false;
+        rewindingToObstacle = false;
+    }
+
     public boolean travelTo(MapLocation dest) throws GameActionException {
         // Returns true if movement in progress
         // Returns false if journey complete or obstacle encountered
