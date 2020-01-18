@@ -84,7 +84,7 @@ public strictfp class DroneUtil {
         }
 
         if (rc.canMove(nextDir)) { // Drone can move
-          
+
             rc.move(nextDir);
             currentDirection = nextDir;
             return true;
@@ -107,7 +107,7 @@ public strictfp class DroneUtil {
             double slope = dy/dx;
 
             // CW preferred (using XOR)
-            if((abs(slope) < 1) ^ (slope < 0)) {
+            if((Math.abs(slope) < 1) ^ (slope < 0)) {
               while (variance < 4 && moved == false) {
                 if (rc.canMove(dirCW)) {
                   System.out.println(">>>>> Avoiding obstacle CW x" + variance);
@@ -119,7 +119,7 @@ public strictfp class DroneUtil {
                   moved = true;
                 }
                 else {
-                  var++;
+                  variance++;
                   dirCW = dirCW.rotateRight();
                   dirCCW = dirCCW.rotateRight();
                 }
@@ -136,7 +136,7 @@ public strictfp class DroneUtil {
                   moved = true;
                 }
                 else {
-                  var++;
+                  variance++;
                   dirCW = dirCW.rotateRight();
                   dirCCW = dirCCW.rotateRight();
                 }
@@ -179,13 +179,13 @@ public strictfp class DroneUtil {
         else if (dy < 0)
           return Direction.SOUTHWEST;
       }
-      else return Direction.CENTER;
+      return Direction.CENTER;
     }
 
     // Uses ttDiagFirst if diagonal
     public static Direction ttLinFirst(int dx, int dy) {
-      ax = abs(dx);
-      ay = abs(dy);
+      int ax = Math.abs(dx);
+      int ay = Math.abs(dy);
       if (ax == ay) {
         return ttDiagFirst(dx, dy);
       } else if (ax > ay) {
@@ -199,7 +199,7 @@ public strictfp class DroneUtil {
         else if (dy > 0)
           return Direction.NORTH;
       } 
-      else return Direction.CENTER;
+      return Direction.CENTER;
     }
 
 
