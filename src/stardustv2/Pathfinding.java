@@ -173,7 +173,7 @@ public strictfp class Pathfinding {
     }
 
     public static boolean locIsNull(MapLocation loc) throws GameActionException {
-        return loc.x < 0 || loc.y < 0;
+        return loc.x < 0 || loc.y < 0 || loc.x > 64 || loc.y > 64;
     }
 
     public void drawPersistentMLine() throws GameActionException {

@@ -2,7 +2,9 @@ package stardustv2;
 
 import battlecode.common.*;
 
-import java.util.ArrayList;
+import java.nio.file.Path;
+import java.rmi.MarshalledObject;
+import java.util.*;
 
 public strictfp class Communication {
     static RobotController rc;
@@ -17,8 +19,12 @@ public strictfp class Communication {
     final static int CODE_SOUP_LOCATED = 201;
     final static int SOUP_BROADCAST_COST = 1;
 
+    final static int CODE_REFINERY_BUILT = 230;
+    final static int ANNOUNCE_REFINERY_COST = 2;
+
     final static int REBROADCAST_MULTIPLIER = 10;
     final static int REBROADCAST_OFFSET = 5;
+    final static int REBROADCAST_COST = 1;
 
     public Communication(RobotController rc) {
         Communication.rc = rc;
@@ -33,8 +39,179 @@ public strictfp class Communication {
         }
     }
 
-    public boolean trySendRebroadcastBlock(int cost) throws GameActionException {
-        return false;
+    public boolean trySendRebroadcastBlock(int cost,
+                                           Set<Integer> soupLocations,
+                                           ArrayList<MapLocation> refineries,
+                                           MapLocation enemyHQ,
+                                           int health) throws GameActionException {
+        // Only broadcast on rounds ending in 5
+        if (rc.getRoundNum() % 10 != REBROADCAST_OFFSET) {
+            return false;
+        }
+
+        System.out.println("Rebroadcast called...");
+        // Get the 8 closest soup sectors to HQ
+        // Key: distanceSquared, Value:sector
+        TreeMap<Integer, Integer> eightClosest = new TreeMap<>();
+        if (soupLocations.size() <= 8) {
+            for (int sector : soupLocations) {
+                eightClosest.put(0, sector);
+            }
+        } else {
+            for (int sector : soupLocations) {
+                if (eightClosest.size() >= 8) {
+                    int d2sector = rc.getLocation().distanceSquaredTo(
+                            Sector.getCenter(sector, rc.getMapHeight(), rc.getMapWidth())
+                    );
+                    int highestKey = eightClosest.lastKey();
+                    if (d2sector < highestKey) {
+                        eightClosest.remove(highestKey);
+                        eightClosest.put(d2sector, sector);
+                    }
+                } else {
+                    int d2sector = rc.getLocation().distanceSquaredTo(
+                            Sector.getCenter(sector, rc.getMapHeight(), rc.getMapWidth())
+                    );
+                    eightClosest.put(d2sector, sector);
+                }
+            }
+        }
+
+        ArrayList<Integer> broadcastSoupLocations = new ArrayList<>(eightClosest.values());
+
+        // Get first 4 refinery locations
+        ArrayList<MapLocation> broadcastRefineryLocations =
+                new ArrayList<>(refineries.subList(0, Math.min(refineries.size(), 4)));
+
+        // Pack second chunk
+        int secondChunk = 0;
+        for (int i = 0, j = 1000000; i < 4; i++, j /= 100) {
+            int currentBits;
+            if (i >= broadcastSoupLocations.size()) {
+                currentBits = 99;
+            } else {
+                currentBits = broadcastSoupLocations.get(i);
+            }
+            secondChunk += currentBits * j;
+        }
+
+        // Pack third chunk
+        int thirdChunk = 0;
+        for (int i = 0, j = 1000000; i < 4; i++, j /= 100) {
+            int currentBits;
+            if (i+4 > broadcastSoupLocations.size()) {
+                currentBits = 99;
+            } else {
+                currentBits = broadcastSoupLocations.get(i+4);
+            }
+            thirdChunk += currentBits * j;
+        }
+
+        // Pack fourth & fifth chunks
+        int fourthChunk = 99999999;
+        int fifthChunk = 99999999;
+        int numRefineryLocations = broadcastRefineryLocations.size();
+        switch (numRefineryLocations) {
+            case 0:
+                break;
+            case 1:
+                fourthChunk = (serializeLoc(broadcastRefineryLocations.get(0)) * 10000) + 9999;
+                fifthChunk = 99999999;
+                break;
+            case 2:
+                fourthChunk = serializeLoc(broadcastRefineryLocations.get(0)) * 10000;
+                fourthChunk += serializeLoc(broadcastRefineryLocations.get(1));
+                fifthChunk = 99999999;
+                break;
+            case 3:
+                fourthChunk = serializeLoc(broadcastRefineryLocations.get(0)) * 10000;
+                fourthChunk += serializeLoc(broadcastRefineryLocations.get(1));
+                fifthChunk = (serializeLoc(broadcastRefineryLocations.get(2)) * 10000) + 9999;
+                break;
+            case 4:
+                fourthChunk = serializeLoc(broadcastRefineryLocations.get(0)) * 10000;
+                fourthChunk += serializeLoc(broadcastRefineryLocations.get(1));
+                fifthChunk = serializeLoc(broadcastRefineryLocations.get(2)) * 10000;
+                fifthChunk += serializeLoc(broadcastRefineryLocations.get(3));
+                break;
+        }
+
+        int sixthChunk = serializeLoc(enemyHQ);
+        int firstChunk = (generateValidationInt(rc.getRoundNum()) * LOWER_CODE_BITS) + CODE_SOUP_LOCATED;
+
+        int[] rebroadcastMsg = new int[]{
+                firstChunk,
+                secondChunk,
+                thirdChunk,
+                fourthChunk,
+                fifthChunk,
+                sixthChunk,
+                health
+        };
+        System.out.println("Attempting to send following rebroadcast msg:" + rebroadcastMsg);
+        return send(rebroadcastMsg, REBROADCAST_COST);
+    }
+
+    public Transaction getLastRebroadcast() throws GameActionException {
+        if (rc.getRoundNum() > 5) {
+            int lastRebroadcast = rc.getRoundNum()/10 + 5;
+            int lastRebroadcast2 = rc.getRoundNum()/10 + 6;
+
+            if (rc.getRoundNum() % 10 <= 5) {
+                lastRebroadcast -= 10;
+            }
+//            if (rc.getRoundNum() % 10 <= 6) {
+//                lastRebroadcast2 -= 10;
+//            }
+
+            Transaction[] rbBlock = rc.getBlock(lastRebroadcast);
+            for (Transaction t : rbBlock) {
+                if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_REBROADCAST) {
+                    return t;
+                }
+            }
+//            rbBlock = rc.getBlock((lastRebroadcast2));
+//            for (Transaction t : rbBlock) {
+//                if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_REBROADCAST) {
+//                    return t;
+//                }
+//            }
+        }
+        return new Transaction(1, new int[]{0, 99999999, 99999999, 99999999, 99999999, 9999, 50}, 0);
+    }
+
+    public ArrayList<Integer> getSoupFromRebroadcast(Transaction t) throws GameActionException {
+        ArrayList<Integer> result = new ArrayList<>();
+        int firstFour = t.getMessage()[1];
+        int lastFour = t.getMessage()[2];
+        for (int i = 100; i <= 100000000; i *= 100) {
+            if (firstFour % i != 99) {
+                result.add(firstFour % i);
+            }
+            if (lastFour % i != 99) {
+                result.add(lastFour % i);
+            }
+        }
+        return result;
+    }
+    
+    public ArrayList<MapLocation> getRefineriesFromRebroadcast(Transaction t) throws GameActionException {
+        ArrayList<MapLocation> result = new ArrayList<>();
+        int firstTwo = t.getMessage()[3];
+        int lastTwo = t.getMessage()[4];
+        if (firstTwo / 10000 != 9999) {
+            result.add(deserializeLoc(firstTwo / 10000));
+        }
+        if (firstTwo % 10000 != 9999) {
+            result.add(deserializeLoc(firstTwo % 10000));
+        }
+        if (lastTwo / 10000 != 9999) {
+            result.add(deserializeLoc(lastTwo / 10000));
+        }
+        if (lastTwo % 10000 != 9999) {
+            result.add(deserializeLoc(lastTwo % 10000));
+        }
+        return result;
     }
 
     public void broadcastSoup(int sector) throws GameActionException {
@@ -47,9 +224,24 @@ public strictfp class Communication {
         System.out.println("Sector " + sector + " is out of soup!");
     }
 
-    public ArrayList<Integer> checkSoupBroadcast() throws GameActionException {
+    public void announceNewRefinery(MapLocation loc) throws GameActionException {
+        int firstChunk = (generateValidationInt(rc.getRoundNum()) * LOWER_CODE_BITS) + CODE_REFINERY_BUILT;
+        int[] refMsg = new int[]{firstChunk, serializeLoc(loc), 0, 0, 0, 0, 0};
+        send(refMsg, ANNOUNCE_REFINERY_COST);
+    }
+
+    public ArrayList<MapLocation> checkNewRefineries(Transaction[] currentBlock) throws GameActionException {
+        ArrayList<MapLocation> result = new ArrayList<>();
+        for (Transaction t : currentBlock) {
+            if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_REFINERY_BUILT) {
+                result.add(deserializeLoc(t.getMessage()[1]));
+            }
+        }
+        return result;
+    }
+
+    public ArrayList<Integer> checkSoupBroadcast(Transaction[] currentBlock) throws GameActionException {
         ArrayList<Integer> result = new ArrayList<>();
-        Transaction[] currentBlock = rc.getBlock(rc.getRoundNum() - 1);
         for (Transaction t : currentBlock) {
             if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_SOUP_LOCATED) {
                 result.add(t.getMessage()[1]);

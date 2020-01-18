@@ -1,5 +1,6 @@
 package stardustv2;
 import battlecode.common.*;
+import net.sf.jsi.SpatialIndex;
 
 import java.util.Deque;
 import java.util.ArrayList;
@@ -64,7 +65,7 @@ public strictfp class RobotPlayer {
     static int mapHeight;
     static int mapWidth;
     static MapLocation localHQ;
-    static MapLocation enemyHQ;
+    static MapLocation enemyHQ = new MapLocation(99,99); // assigned value is temporary
 
     // HQ-specific variables
     static int HQHealth = 50;
@@ -171,27 +172,69 @@ public strictfp class RobotPlayer {
     }
 
     static void runHQ() throws GameActionException {
-        // Broadcast genesis message
-        communication.trySendGenesisBlock(rc.getLocation(), 3);
-        // Listen in on refinery/soup locations to include in rebroadcast
+        // Broadcast genesis message if applicable
+        if (rc.getRoundNum() == 1) {
+            communication.trySendGenesisBlock(rc.getLocation(), 3);
+        } else {
+            // Get previous round block
+            Transaction[] currentBlock = rc.getBlock(rc.getRoundNum() - 1);
+
+            // Listen in on refinery/soup locations to include in rebroadcast
+            ArrayList<Integer> newSoupSectors = communication.checkSoupBroadcast(currentBlock);
+            ArrayList<MapLocation> newRefineries = communication.checkNewRefineries(currentBlock);
+            if (newSoupSectors.size() > 0) {
+                soupSectors.addAll(newSoupSectors);
+            }
+            if (newRefineries.size() > 0 ) {
+                refineries.addAll(newRefineries);
+            }
+        }
+
         // Calculate own health
+        HQHealth = 50 - rc.getDirtCarrying();
+
         // Handle rebroadcast
+        if (rc.getRoundNum() % 10 == 5) {
+            communication.trySendRebroadcastBlock(1, soupSectors, refineries, enemyHQ, HQHealth);
+        }
+
         // Handle netgun
+        runNetGun();
+
         // Build and assign miners
-        // Send commands to build drone centers/refineries/etc
+        // TODO: Assign miner to scout enemy HQ, build offensive design school
+        // TODO: Assign miner to build refinery + defensive design school near HQ
         for (Direction dir : directions) {
             if (minerCount < 4 && tryBuild(RobotType.MINER, dir)) {
                 minerCount++;
             }
         }
+
+        // Send commands to build drone centers/refineries/etc
     }
 
     static void runMiner() throws GameActionException {
-        ArrayList<Integer> newSoupSectors = communication.checkSoupBroadcast();
+        // Check direct soup broadcasts
+        Transaction[] currentBlock = rc.getBlock(rc.getRoundNum() - 1);
+        ArrayList<Integer> newSoupSectors = communication.checkSoupBroadcast(currentBlock);
         if (newSoupSectors.size() > 0) {
             soupSectors.addAll(newSoupSectors);
         }
 
+        // Check rebroadcast
+        if (rc.getRoundNum() % 10 == 6) {
+            Transaction rb = communication.getLastRebroadcast();
+            ArrayList<Integer> newRbSoupSectors = communication.getSoupFromRebroadcast(rb);
+            ArrayList<MapLocation> newRbRefineries = communication.getRefineriesFromRebroadcast(rb);
+            if (newRbSoupSectors.size() > 0) {
+                soupSectors.addAll(newRbSoupSectors);
+            }
+            if (newRbRefineries.size() > 0) {
+                refineries.addAll(newRbRefineries);
+            }
+        }
+
+        // Assign a miner to get soup if there is some available
         if (minerState == MinerState.SCOUTING
                 || minerState == MinerState.RANDOM
                 || minerState == MinerState.UNASSIGNED) {
@@ -260,8 +303,19 @@ public strictfp class RobotPlayer {
     }
 
     static void runNetGun() throws GameActionException {
-
+        RobotInfo[] allRobots = rc.senseNearbyRobots();
+        for (RobotInfo ri : allRobots) {
+            if (ri.team != rc.getTeam()) {
+                if (rc.canShootUnit(ri.ID)) {
+                    rc.shootUnit(ri.ID);
+                }
+            }
+        }
     }
+
+    //////////////////////////////////////////////////
+    // UTILITY FUNCTIONS
+    //////////////////////////////////////////////////
 
     static Direction randomDirection() {
         return directions[(int) (Math.random() * directions.length)];
@@ -295,19 +349,6 @@ public strictfp class RobotPlayer {
             return true;
         } else return false;
     }
-
-    //////////////////////////////////////////////////
-    // COMMUNICATION FUNCTIONS - also see Communication.java
-    //////////////////////////////////////////////////
-
-    static void retrieveSoupLocations() throws GameActionException {
-
-    }
-
-    //////////////////////////////////////////////////
-    // PATHFINDING FUNCTIONS - see Pathfinding.java
-    //////////////////////////////////////////////////
-
 
     //////////////////////////////////////////////////
     // MINER FUNCTIONS
@@ -478,12 +519,6 @@ public strictfp class RobotPlayer {
                     }
                 } else {
                     if (rc.isReady()) {
-//                            pathfinding.travelTo(travelQueue.peekFirst());
-//                            refineryAccessAttempts++;
-//                            if (refineryAccessAttempts > 25) {
-//                                travelQueue.clear();
-//                                System.out.println("Can't reach refinery...");
-//                            }
                         if (!pathfinding.travelTo(travelQueue.peekFirst())) {
                             travelQueue.clear();
                             pathfinding.reset();
@@ -531,16 +566,137 @@ public strictfp class RobotPlayer {
     //////////////////////////////////////////////////
 
     static void assignLandscaper() throws GameActionException {
-
+        landscaperState = LandscaperState.DEFENSE;
     }
 
-    static void runOffenseLandscaper() throws GameActionException {
+    static void runOffenseLandscaper() {
+        /*
+         * if (HQHealth < 50 or broadcast of death) {
+         *      become defense
+         *      recur?
+         * }
+         */
+        /*
+         * if enemyHQ not known:
+         * 1. check blockchain for that info
+         * 2. if not found, then go scouting
+         */
+        if (enemyHQ != null) {
+            if (rc.canSenseLocation(enemyHQ)) {
+                for (RobotInfo info: rc.senseNearbyRobots()) {
+                    if (info.team == rc.getTeam().opponent()) {
+                        // move towards it
+                        // attack it
+                        // break
+                    }
+                }
+            } else {
+                // while (moveToTarget(enemyHQ)) {}
+            }
+        }
+    }
+/*
+    need to add a check in HQ for wall being full, and if it is, broadcast that information
+    */
+    /**
+     * decision tree:
+     * 1. if part of the wall, just dig and contribute
+     * 2. else:
+     *      0. if you don't know HQ: get its location
+     *      1. if wall is full, become offense
+     *      2. if wall is not full as far as you know:
+     *          1. if HQ in vision, try to embed yourself into the wall
+     *          2. if HQ not in vision, move towards HQ
+     */
+    static void runDefenseLandscaper() {
+        // if part of the wall, build the wall
+        try {
+            if (wallDirection != null) {
+                while (rc.canDepositDirt(Direction.CENTER)) {
+                    rc.depositDirt(Direction.CENTER);
+                }
+                while (rc.canDigDirt(wallDirection)) {
+                    rc.digDirt(wallDirection);
+                }
+                return;
+            }
+        } catch (GameActionException e) {}
 
+        /*
+        if (false) {
+            if (rc.canSenseLocation(localHQ)) {
+                for (RobotInfo info : rc.senseNearbyRobots()) {
+                    if (info.team == rc.getTeam().opponent()) {
+                        // move towards it
+                        // attack it
+                        // break
+                    }
+                }
+            } else {
+                try { while (moveToTarget(localHQ)) {} } catch (GameActionException e) {}
+            }
+        }
+        */
+
+        // if wall is full, become offense
+        if (rc.canSenseLocation(localHQ)) {
+            if (!tryBuildWall()) {
+                return;
+            }
+        } else {
+            try { while (pathfinding.travelTo(localHQ)) {} } catch (GameActionException e) {}
+        }
     }
 
-    static void runDefenseLandscaper() throws GameActionException {
+    // I want HQ to broadcast until wall is finished
+    // corner case bug to consider: you haven't labeled yourself as the wall yet but you're standing where the wall would be
+    static boolean tryBuildWall() {
+        Direction empty = null;
+        for (Direction dir: wallQueue) {
+            try {
+                if (!rc.isLocationOccupied(new MapLocation(localHQ.x + dir.dx, localHQ.y + dir.dy))) {
+                    empty = dir;
+                    break;
+                }
+            } catch (GameActionException e) {
+                empty = dir;
+                break;
+            }
+        }
 
+        if (empty == null) {
+            wallBuilt = true;
+            return false;
+        }
+
+        for (Direction dir: directions) {
+            if (rc.getLocation().x == localHQ.x + dir.dx &&  rc.getLocation().y == localHQ.y + dir.dy) {
+                wallDirection = dir;
+                return true;
+            }
+        }
+
+        MapLocation chosenLocation = new MapLocation(localHQ.x + empty.dx, localHQ.y + empty.dy);
+        try {
+            pathfinding.travelTo(chosenLocation);
+        } catch (GameActionException e) {}
+
+        if (rc.getLocation() == chosenLocation) {
+            System.out.println("We have been set into the wall");
+            wallDirection = empty;
+        }
+
+        for (Direction dir: directions) {
+            if (rc.getLocation().x == localHQ.x + dir.dx &&  rc.getLocation().y == localHQ.y + dir.dy) {
+                wallDirection = dir;
+                return true;
+            }
+        }
+        return true;
     }
 
+    //////////////////////////////////////////////////
+    // OTHER FUNCTIONS
+    //////////////////////////////////////////////////
 
 }
