@@ -1,0 +1,3 @@
+On things to be dealt with before final implementation:
+
+> Miner 4 was set to BUILDING 
