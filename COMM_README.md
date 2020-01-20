@@ -30,10 +30,10 @@
 
 - Soup Deposit Located
   - 1) Hashed round number (upper 7 digits), identifier (lower 3 digits (**201**))
-  - 2) Coordinates of soup deposit (lower 4 digits)
-- Soup Deposit Area Depleted
+  - 2) Sector where soup is located (2 digits)
+- Soup Deposit Area Empty
   - 1) Hashed round number (upper 7 digits), identifier (lower 3 digits (**202**))
-  - 2) Coordinates of soup deposit (lower 4 digits)
+  - 2) Sector of now empty soup deposit (2 digits)
 - Enemy HQ Located
   - 1) Hashed round number (upper 7 digits), identifier (lower 3 digits (**220**))
   - 2) Coordinates of enemy HQ (lower 4 digits)

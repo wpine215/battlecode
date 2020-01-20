@@ -17,6 +17,9 @@ public strictfp class Communication {
     final static int CODE_SOUP_LOCATED = 201;
     final static int SOUP_BROADCAST_COST = 1;
 
+    final static int CODE_SOUP_EMPTY = 202;
+    final static int EMPTY_SOUP_BROADCAST_COST = 1;
+
     final static int CODE_REFINERY_BUILT = 230;
     final static int ANNOUNCE_REFINERY_COST = 2;
 
@@ -210,8 +213,16 @@ public strictfp class Communication {
         send(spMsg, SOUP_BROADCAST_COST);
     }
 
-    public void broadcastEmptySoup(int sector) throws GameActionException {
-        System.out.println("Sector " + sector + " is out of soup!");
+    public void broadcastEmptySoup(ArrayList<Integer> emptySectors) throws GameActionException {
+        int[] seMsg = new int[]{0, 0, 0, 0, 0, 0, 0};
+        int firstChunk = (generateValidationInt(rc.getRoundNum()) * LOWER_CODE_BITS) + CODE_SOUP_EMPTY;
+        seMsg[0] = firstChunk;
+        seMsg[1] = emptySectors.size();
+        for (int i = 0; i < Math.min(5, emptySectors.size()); i++) {
+            System.out.println("Sector " + emptySectors.get(i) + " is out of soup!");
+            seMsg[i+2] = emptySectors.get(i);
+        }
+        send(seMsg, EMPTY_SOUP_BROADCAST_COST);
     }
 
     public void announceNewRefinery(MapLocation loc) throws GameActionException {
@@ -235,6 +246,18 @@ public strictfp class Communication {
         for (Transaction t : currentBlock) {
             if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_SOUP_LOCATED) {
                 result.add(t.getMessage()[1]);
+            }
+        }
+        return result;
+    }
+
+    public ArrayList<Integer> checkEmptySoupBroadcast(Transaction[] currentBlock) throws GameActionException {
+        ArrayList<Integer> result = new ArrayList<>();
+        for (Transaction t : currentBlock) {
+            if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_SOUP_EMPTY) {
+                for (int i = 2; i < 2 + t.getMessage()[1]; i++) {
+                    result.add(t.getMessage()[i]);
+                }
             }
         }
         return result;

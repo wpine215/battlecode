@@ -2,10 +2,7 @@ package stardustv2;
 
 import battlecode.common.*;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.Random;
-import java.util.Set;
+import java.util.*;
 
 public strictfp class Pathfinding {
     static RobotController rc;
@@ -36,6 +33,8 @@ public strictfp class Pathfinding {
     static ArrayList<MapLocation> currentMLine;
     static Set<MapLocation> currentMLineSet;
     static Set<MapLocation> locationHistory;
+    static LinkedList<MapLocation> lastEightLocations;
+    static int resetRounds;
 
     public Pathfinding(RobotController rc) {
         Pathfinding.rc = rc;
@@ -50,6 +49,33 @@ public strictfp class Pathfinding {
         currentMLine = new ArrayList<>();
         currentMLineSet = new HashSet<>();
         locationHistory = new HashSet<>();
+        lastEightLocations = new LinkedList<>();
+        resetRounds = 0;
+    }
+
+    private void locationPushBack(MapLocation loc) throws GameActionException {
+        if (lastEightLocations.size() >= 8) {
+            lastEightLocations.removeLast();
+        }
+        lastEightLocations.addFirst(loc);
+    }
+
+    private boolean iskDoubleRepeating() throws GameActionException {
+        if (lastEightLocations.size() >= 4) {
+            return lastEightLocations.get(0).equals(lastEightLocations.get(2))
+                    && lastEightLocations.get(1).equals(lastEightLocations.get(3));
+        }
+        return false;
+    }
+
+    private boolean isQuadRepeating() throws GameActionException {
+        if (lastEightLocations.size() == 8) {
+            return lastEightLocations.get(0).equals(lastEightLocations.get(4))
+                    && lastEightLocations.get(1).equals(lastEightLocations.get(5))
+                    && lastEightLocations.get(2).equals(lastEightLocations.get(6))
+                    && lastEightLocations.get(3).equals(lastEightLocations.get(7));
+        }
+        return false;
     }
 
     public void reset() throws GameActionException {
@@ -62,12 +88,51 @@ public strictfp class Pathfinding {
         followingObstacle = false;
         alreadyHitMapEdge = false;
         rewindingToObstacle = false;
+        lastEightLocations.clear();
+    }
+
+    static Direction randomDirection() throws GameActionException {
+        Direction temp = directions[(int) (Math.random() * directions.length)];
+        int maxTries = 8;
+        while (rc.senseFlooding(rc.adjacentLocation(temp)) && maxTries > 0) {
+            temp = directions[(int) (Math.random() * directions.length)];
+            maxTries--;
+        }
+        return directions[(int) (Math.random() * directions.length)];
+    }
+
+    static boolean tryMove(Direction dir) throws GameActionException {
+        // System.out.println("I am trying to move " + dir + "; " + rc.isReady() + " " + rc.getCooldownTurns() + " " + rc.canMove(dir));
+        if (rc.isReady() && rc.canMove(dir) && !rc.senseFlooding(rc.adjacentLocation(dir))) {
+            rc.move(dir);
+            return true;
+        } else return false;
     }
 
     public boolean travelTo(MapLocation dest) throws GameActionException {
         // Returns true if movement in progress
         // Returns false if journey complete or obstacle encountered
         Random rand = new Random();
+
+        if (resetRounds > 0) {
+            tryMove(randomDirection());
+            resetRounds--;
+            return true;
+        }
+
+        if (iskDoubleRepeating()) {
+            System.out.println(">>>>> Double repeating! Resetting...");
+            reset();
+            resetRounds = 2;
+            return true;
+        }
+
+        if (isQuadRepeating()) {
+            System.out.println(">>>>> Quad repeating! Resetting...");
+            reset();
+            resetRounds = 2;
+            return true;
+        }
 
         // If no m-line exists, we haven't performed path calculations yet
         if (currentMLine.isEmpty()) {
@@ -86,11 +151,10 @@ public strictfp class Pathfinding {
 
         // We encountered obstacle point again
         if (rc.getLocation().equals(obstacleEncounteredAt) && !alreadyHitMapEdge) {
-            System.out.println(">>>>> Encountered obstacle point again!");
-            currentMLine.clear();
-            currentMLineSet.clear();
-            locationHistory.clear();
-            return false;
+            System.out.println(">>>>> Encountered obstacle point again! Resetting...");
+            reset();
+            resetRounds = 3;
+            return true; // used to be false btw
         }
 
         // We encountered a map edge
@@ -126,10 +190,13 @@ public strictfp class Pathfinding {
             Direction nextDir = rc.getLocation().directionTo(next);
             if (rc.canMove(nextDir) && !rc.senseFlooding(next)) {
                 locationHistory.add(rc.getLocation());
+                locationPushBack(rc.getLocation());
                 rc.move(nextDir);
                 currentDirection = nextDir;
                 return true;
             } else {
+
+
                 // Obstacle at next point on m-line, so do some following
                 locationHistory.add(rc.getLocation());
                 obstacleEncounteredAt = rc.getLocation();
@@ -238,6 +305,7 @@ public strictfp class Pathfinding {
                     && !rc.senseFlooding(rc.adjacentLocation(dir))
                     && locationOnMLine(rc.adjacentLocation(dir))
                     && !locationAlreadyVisited(rc.adjacentLocation(dir))) {
+                locationPushBack(rc.getLocation());
                 rc.move(dir);
                 currentDirection = dir;
                 return true;
@@ -246,6 +314,7 @@ public strictfp class Pathfinding {
 
         for (Direction dir : moveQueue) {
             if (rc.canMove(dir) && !rc.senseFlooding(rc.adjacentLocation(dir))) {
+                locationPushBack(rc.getLocation());
                 rc.move(dir);
                 currentDirection = dir;
                 rc.setIndicatorDot(rc.adjacentLocation(dir), 0, 100, 255);
@@ -281,6 +350,7 @@ public strictfp class Pathfinding {
                     && !rc.senseFlooding(rc.adjacentLocation(dir))
                     && locationOnMLine(rc.adjacentLocation(dir))
                     && !locationAlreadyVisited(rc.adjacentLocation(dir))) {
+                locationPushBack(rc.getLocation());
                 rc.move(dir);
                 currentDirection = dir;
                 return true;
@@ -289,6 +359,7 @@ public strictfp class Pathfinding {
 
         for (Direction dir: moveQueue) {
             if (rc.canMove(dir) && !rc.senseFlooding(rc.adjacentLocation(dir))) {
+                locationPushBack(rc.getLocation());
                 rc.move(dir);
                 currentDirection = dir;
                 rc.setIndicatorDot(rc.adjacentLocation(dir), 0, 100, 255);
