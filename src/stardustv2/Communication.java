@@ -2,8 +2,6 @@ package stardustv2;
 
 import battlecode.common.*;
 
-import java.nio.file.Path;
-import java.rmi.MarshalledObject;
 import java.util.*;
 
 public strictfp class Communication {
@@ -49,7 +47,6 @@ public strictfp class Communication {
             return false;
         }
 
-        System.out.println("Rebroadcast called...");
         // Get the 8 closest soup sectors to HQ
         // Key: distanceSquared, Value:sector
         TreeMap<Integer, Integer> eightClosest = new TreeMap<>();
@@ -137,7 +134,7 @@ public strictfp class Communication {
         }
 
         int sixthChunk = serializeLoc(enemyHQ);
-        int firstChunk = (generateValidationInt(rc.getRoundNum()) * LOWER_CODE_BITS) + CODE_SOUP_LOCATED;
+        int firstChunk = (generateValidationInt(rc.getRoundNum()) * LOWER_CODE_BITS) + CODE_REBROADCAST;
 
         int[] rebroadcastMsg = new int[]{
                 firstChunk,
@@ -148,21 +145,16 @@ public strictfp class Communication {
                 sixthChunk,
                 health
         };
-        System.out.println("Attempting to send following rebroadcast msg:" + rebroadcastMsg);
         return send(rebroadcastMsg, REBROADCAST_COST);
     }
 
     public Transaction getLastRebroadcast() throws GameActionException {
         if (rc.getRoundNum() > 5) {
-            int lastRebroadcast = rc.getRoundNum()/10 + 5;
-            int lastRebroadcast2 = rc.getRoundNum()/10 + 6;
+            int lastRebroadcast = ((rc.getRoundNum()/10) * 10) + 5;
 
             if (rc.getRoundNum() % 10 <= 5) {
                 lastRebroadcast -= 10;
             }
-//            if (rc.getRoundNum() % 10 <= 6) {
-//                lastRebroadcast2 -= 10;
-//            }
 
             Transaction[] rbBlock = rc.getBlock(lastRebroadcast);
             for (Transaction t : rbBlock) {
@@ -170,13 +162,8 @@ public strictfp class Communication {
                     return t;
                 }
             }
-//            rbBlock = rc.getBlock((lastRebroadcast2));
-//            for (Transaction t : rbBlock) {
-//                if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_REBROADCAST) {
-//                    return t;
-//                }
-//            }
         }
+        System.out.println("getLastRebroadcast fallback condition!");
         return new Transaction(1, new int[]{0, 99999999, 99999999, 99999999, 99999999, 9999, 50}, 0);
     }
 
@@ -184,12 +171,15 @@ public strictfp class Communication {
         ArrayList<Integer> result = new ArrayList<>();
         int firstFour = t.getMessage()[1];
         int lastFour = t.getMessage()[2];
+
         for (int i = 100; i <= 100000000; i *= 100) {
-            if (firstFour % i != 99) {
-                result.add(firstFour % i);
+            if (((firstFour % i) / (i/100)) != 99) {
+                System.out.println("getSoupFromRebroadcast firstFour: received soup sector #" + ((firstFour % i) / (i/100)));
+                result.add(((firstFour % i) / (i/100)));
             }
-            if (lastFour % i != 99) {
-                result.add(lastFour % i);
+            if (((lastFour % i) / (i/100)) != 99) {
+                System.out.println("getSoupFromRebroadcast lastFour: received soup sector #" + ((lastFour % i) / (i/100)));
+                result.add(((lastFour % i) / (i/100)));
             }
         }
         return result;

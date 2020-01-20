@@ -1,6 +1,5 @@
 package stardustv2;
 import battlecode.common.*;
-import net.sf.jsi.SpatialIndex;
 
 import java.util.Deque;
 import java.util.ArrayList;
@@ -218,8 +217,11 @@ public strictfp class RobotPlayer {
         Transaction[] currentBlock = rc.getBlock(rc.getRoundNum() - 1);
         ArrayList<Integer> newSoupSectors = communication.checkSoupBroadcast(currentBlock);
         if (newSoupSectors.size() > 0) {
+            System.out.println("New soup sectors to be added from direct broadcast are: " + newSoupSectors);
             soupSectors.addAll(newSoupSectors);
         }
+
+        System.out.println("soupSectors contents: " + soupSectors);
 
         // Check rebroadcast
         if (rc.getRoundNum() % 10 == 6) {
@@ -227,6 +229,7 @@ public strictfp class RobotPlayer {
             ArrayList<Integer> newRbSoupSectors = communication.getSoupFromRebroadcast(rb);
             ArrayList<MapLocation> newRbRefineries = communication.getRefineriesFromRebroadcast(rb);
             if (newRbSoupSectors.size() > 0) {
+                System.out.println("New soup sectors to be added from rebroadcast are: " + newRbSoupSectors);
                 soupSectors.addAll(newRbSoupSectors);
             }
             if (newRbRefineries.size() > 0) {
