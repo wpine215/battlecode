@@ -95,6 +95,7 @@ public strictfp class RobotPlayer {
     static int unfruitfulRounds = 0;
     static boolean minerHasBuiltDefensiveDS = false;
     static boolean minerHasBuiltAuxiliaryRefinery = false;
+    static boolean minerHasBuiltDroneCenter = false;
 
     // Landscaper-specific variables
     static int landscapersBuilt = 0;
@@ -115,6 +116,7 @@ public strictfp class RobotPlayer {
 
     // Some constants
     final static int soupNeededToBuildDesignSchool = 215;
+    final static int soupNeededToBuildDroneCenter = 215;
     final static int landscaperRound = 40;
 //    final static int refineryRound = 140;
 //    final static int droneRound = 500;
@@ -339,6 +341,8 @@ public strictfp class RobotPlayer {
                     goBuildDefensiveDS();
                 } else if (!minerHasBuiltAuxiliaryRefinery) {
                     goBuildAuxiliaryRefinery();
+                } else if (!minerHasBuiltDroneCenter) {
+                    goBuildDroneCenter();
                 } else {
                     minerState = MinerState.SCOUTING;
                 }
@@ -395,7 +399,12 @@ public strictfp class RobotPlayer {
     }
 
     static void runFulfillmentCenter() throws GameActionException {
-
+        // Generate drone in random direction if able
+        for (Direction dir : directions) {
+            if (tryBuild(RobotType.DELIVERY_DRONE, dir)) {
+                break;
+            }
+        }
     }
 
     static void runLandscaper() throws GameActionException {
@@ -624,6 +633,17 @@ public strictfp class RobotPlayer {
         }
     }
 
+    static void staticDetectSoup() throws GameActionException {
+        MapLocation[] nearbySoup = rc.senseNearbySoup();
+        for (MapLocation loc : nearbySoup) {
+            if (!soupSectors.contains(Sector.getFromLocation(loc))) {
+                soupSectors.add(Sector.getFromLocation(loc));
+                communication.broadcastSoup(Sector.getFromLocation(loc));
+                return;
+            }
+        }
+    }
+
     static void goMine() throws GameActionException {
         if (miningState == MiningState.ENROUTE) {
             if (travelQueue.isEmpty()) {
@@ -748,6 +768,22 @@ public strictfp class RobotPlayer {
             }
         }
         tryMove(randomDirection());
+        staticDetectSoup();
+    }
+
+    static void goBuildDroneCenter() throws GameActionException {
+        if (rc.getTeamSoup() >= soupNeededToBuildDroneCenter) {
+            for (Direction dir : directions) {
+                if (!rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, 25)) {
+                    if (tryBuild(RobotType.FULFILLMENT_CENTER, dir)) {
+                        minerHasBuiltDroneCenter = true;
+                        break;
+                    }
+                }
+            }
+        }
+        tryMove(randomDirection());
+        staticDetectSoup();
     }
 
     static void goOffensiveMiner() throws GameActionException {
