@@ -908,7 +908,27 @@ public strictfp class RobotPlayer {
         // if part of the wall, build the wall
         try {
             if (wallDirection != null) {
-                while (rc.canDepositDirt(Direction.CENTER)) {
+
+                if (!rc.onTheMap(new MapLocation(rc.getLocation().x + wallDirection.dx, rc.getLocation().y + wallDirection.dy))) {
+                    Direction[] queue = new Direction[4];
+                    queue[0] = wallDirection.rotateLeft();
+                    queue[1] = wallDirection.rotateRight();
+                    queue[2] = queue[0].rotateLeft();
+                    queue[3] = queue[1].rotateRight();
+
+                    for (Direction elem : queue) {
+                        MapLocation option = new MapLocation(rc.getLocation().x + elem.dx, rc.getLocation().y + elem.dy);
+                        if (rc.onTheMap(option) && rc.senseElevation(option) > 0) {
+                            wallDirection = elem;
+                            break;
+                        }
+                    }
+                }
+
+                RobotInfo otherBot = rc.senseRobotAtLocation(new MapLocation(rc.getLocation().x + wallDirection.dx, rc.getLocation().y + wallDirection.dy));
+
+                while (rc.canDepositDirt(Direction.CENTER) 
+                        && !(otherBot != null && otherBot.team == rc.getTeam())) {
                     rc.depositDirt(Direction.CENTER);
                 }
                 while (rc.canDigDirt(wallDirection)) {
@@ -918,22 +938,6 @@ public strictfp class RobotPlayer {
             }
         } catch (GameActionException e) {}
 
-        /*
-        if (false) {
-            if (rc.canSenseLocation(localHQ)) {
-                for (RobotInfo info : rc.senseNearbyRobots()) {
-                    if (info.team == rc.getTeam().opponent()) {
-                        // move towards it
-                        // attack it
-                        // break
-                    }
-                }
-            } else {
-                try { while (moveToTarget(localHQ)) {} } catch (GameActionException e) {}
-            }
-        }
-        */
-
         // if wall is full, become offense
         if (rc.canSenseLocation(localHQ)) {
             if (!tryBuildWall()) {
@@ -941,11 +945,6 @@ public strictfp class RobotPlayer {
             }
         } else {
             System.out.println("Trying to move to HQ!");
-//            try {
-//                while (pathfinding.travelTo(localHQ)) {
-//
-//                }
-//            } catch (GameActionException e) {}
             pathfinding.travelTo(localHQ);
         }
     }
