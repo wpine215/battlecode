@@ -2,6 +2,7 @@ package stardustv2;
 
 import battlecode.common.*;
 
+import java.nio.file.Path;
 import java.util.*;
 
 public strictfp class Communication {
@@ -19,6 +20,9 @@ public strictfp class Communication {
 
     final static int CODE_SOUP_EMPTY = 202;
     final static int EMPTY_SOUP_BROADCAST_COST = 1;
+
+    final static int CODE_ENEMY_HQ_LOCATED = 220;
+    final static int ENEMY_HQ_LOCATED_COST = 2;
 
     final static int CODE_REFINERY_BUILT = 230;
     final static int ANNOUNCE_REFINERY_COST = 2;
@@ -207,6 +211,10 @@ public strictfp class Communication {
         return result;
     }
 
+    public MapLocation getEnemyHQFromRebroadcast(Transaction t) throws GameActionException {
+        return deserializeLoc(t.getMessage()[5]);
+    }
+
     public void broadcastSoup(int sector) throws GameActionException {
         int firstChunk = (generateValidationInt(rc.getRoundNum()) * LOWER_CODE_BITS) + CODE_SOUP_LOCATED;
         int[] spMsg = new int[]{firstChunk, sector, 0, 0, 0, 0, 0};
@@ -229,6 +237,12 @@ public strictfp class Communication {
         int firstChunk = (generateValidationInt(rc.getRoundNum()) * LOWER_CODE_BITS) + CODE_REFINERY_BUILT;
         int[] refMsg = new int[]{firstChunk, serializeLoc(loc), 0, 0, 0, 0, 0};
         send(refMsg, ANNOUNCE_REFINERY_COST);
+    }
+
+    public void announceEnemyHQ(MapLocation loc) throws GameActionException {
+        int firstChunk = (generateValidationInt(rc.getRoundNum()) * LOWER_CODE_BITS) + CODE_ENEMY_HQ_LOCATED;
+        int[] enMsg = new int[]{firstChunk, serializeLoc(loc), 0, 0, 0, 0, 0};
+        send(enMsg, ENEMY_HQ_LOCATED_COST);
     }
 
     public ArrayList<MapLocation> checkNewRefineries(Transaction[] currentBlock) throws GameActionException {
@@ -258,6 +272,17 @@ public strictfp class Communication {
                 for (int i = 2; i < 2 + t.getMessage()[1]; i++) {
                     result.add(t.getMessage()[i]);
                 }
+            }
+        }
+        return result;
+    }
+
+    public MapLocation checkEnemyHQBroadcast(Transaction[] currentBlock) throws GameActionException {
+        MapLocation result = new MapLocation(99, 99);
+        for (Transaction t : currentBlock) {
+            if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_ENEMY_HQ_LOCATED) {
+                result = deserializeLoc(t.getMessage()[1]);
+                break;
             }
         }
         return result;

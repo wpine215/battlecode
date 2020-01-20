@@ -112,6 +112,11 @@ public strictfp class Pathfinding {
     public boolean travelTo(MapLocation dest) throws GameActionException {
         // Returns true if movement in progress
         // Returns false if journey complete or obstacle encountered
+
+        if (!currentMLine.isEmpty()) {
+            drawPersistentMLine();
+        }
+
         Random rand = new Random();
 
         if (resetRounds > 0) {
@@ -195,8 +200,6 @@ public strictfp class Pathfinding {
                 currentDirection = nextDir;
                 return true;
             } else {
-
-
                 // Obstacle at next point on m-line, so do some following
                 locationHistory.add(rc.getLocation());
                 obstacleEncounteredAt = rc.getLocation();

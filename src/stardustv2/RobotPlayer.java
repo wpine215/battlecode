@@ -138,9 +138,9 @@ public strictfp class RobotPlayer {
         localHQ = communication.getHQCoordinates();
         currentlyScoutingEnemyAt = 0;
         possibleEnemyLocations = new MapLocation[3];
-        possibleEnemyLocations[0] = new MapLocation(localHQ.x, mapHeight - 1 - localHQ.y);
+        possibleEnemyLocations[0] = new MapLocation(mapWidth - 1 - localHQ.x, localHQ.y);
         possibleEnemyLocations[1] = new MapLocation(mapWidth - 1 - localHQ.x, mapHeight - 1 -localHQ.y);
-        possibleEnemyLocations[2] = new MapLocation(mapWidth - 1 - localHQ.x, localHQ.y);
+        possibleEnemyLocations[2] = new MapLocation(localHQ.x, mapHeight - 1 - localHQ.y);
 
         refineries = new ArrayList<>();
         soupSectors = new HashSet<>();
@@ -148,15 +148,24 @@ public strictfp class RobotPlayer {
 
         if (rc.getType() == RobotType.MINER) {
             refineries.add(localHQ);
+            // Assign initial miner state
+            if (rc.getRoundNum() <= 20) {
+                minerState = MinerState.SCOUTING;
+            } else if (rc.getRoundNum() >= landscaperRound && rc.getTeamSoup() > 140) {
+                minerState = MinerState.BUILDING;
+            } else {
+                minerState = MinerState.UNASSIGNED;
+            }
         }
 
-        // Assign initial miner state
-        if (rc.getRoundNum() <= 20) {
-            minerState = MinerState.SCOUTING;
-        } else if (rc.getRoundNum() >= landscaperRound && rc.getTeamSoup() > 140) {
-            minerState = MinerState.BUILDING;
-        } else {
-            minerState = MinerState.UNASSIGNED;
+        if (rc.getType() == RobotType.DESIGN_SCHOOL || rc.getType() == RobotType.LANDSCAPER) {
+            if (rc.getRoundNum() >= 6) {
+                Transaction rb = communication.getLastRebroadcast();
+                MapLocation tryEnemyHQ = communication.getEnemyHQFromRebroadcast(rb);
+                if (!Pathfinding.locIsNull(tryEnemyHQ)) {
+                    enemyHQ = tryEnemyHQ;
+                }
+            }
         }
 
         System.out.println("I'm a " + rc.getType() + " and I just got created!");
@@ -209,6 +218,12 @@ public strictfp class RobotPlayer {
             if (emptySoupSectors.size() > 0) {
                 soupSectors.removeAll(emptySoupSectors);
             }
+
+            // Check for enemy HQ broadcast
+            MapLocation tryEnemyHQ = communication.checkEnemyHQBroadcast(currentBlock);
+            if (!Pathfinding.locIsNull(tryEnemyHQ)) {
+                enemyHQ = tryEnemyHQ;
+            }
         }
 
         // Calculate own health
@@ -233,7 +248,6 @@ public strictfp class RobotPlayer {
 
         // Build auxiliary miner to build design school and scout enemy HQ
         if (!hasBuiltDefensiveDesignSchool && rc.getTeamSoup() >= soupNeededToBuildDesignSchool) {
-//            auxiliaryMinerRound = rc.getRoundNum() + 10;
             for (Direction dir : directions) {
                 if (tryBuild(RobotType.MINER, dir)) {
                     hasBuiltDefensiveDesignSchool = true;
@@ -241,11 +255,6 @@ public strictfp class RobotPlayer {
                 }
             }
         }
-
-//        if (auxiliaryMinerRound != 0 && auxiliaryMinerRound <= rc.getRoundNum()) {
-//            // placeholder
-//            auxiliaryMinerRound = 0;
-//        }
 
         // Send commands to build drone centers/refineries/etc
     }
@@ -266,6 +275,7 @@ public strictfp class RobotPlayer {
             Transaction rb = communication.getLastRebroadcast();
             ArrayList<Integer> newRbSoupSectors = communication.getSoupFromRebroadcast(rb);
             ArrayList<MapLocation> newRbRefineries = communication.getRefineriesFromRebroadcast(rb);
+            MapLocation tryEnemyHQ = communication.getEnemyHQFromRebroadcast(rb);
             if (newRbSoupSectors.size() > 0) {
                 System.out.println("New soup sectors to be added/replaced from rebroadcast are: " + newRbSoupSectors);
                 soupSectors.clear(); // this line makes the rebroadcast replace, not just add, to soupSectors
@@ -274,6 +284,9 @@ public strictfp class RobotPlayer {
             if (newRbRefineries.size() > 0) {
                 refineries.clear(); // this line makes the rebroadcast replace, not just add, to refineries
                 refineries.addAll(newRbRefineries);
+            }
+            if (!Pathfinding.locIsNull(tryEnemyHQ)) {
+                enemyHQ = tryEnemyHQ;
             }
         }
 
@@ -331,28 +344,18 @@ public strictfp class RobotPlayer {
     }
 
     static void runDesignSchool() throws GameActionException {
-        // Check if offense landscaper
-        // Temporary code until enemy HQ broadcast enabled
-        RobotInfo[] nearby = rc.senseNearbyRobots();
-        if (Pathfinding.locIsNull(enemyHQ)) {
-            for (RobotInfo r : nearby) {
-                if (r.type == RobotType.HQ && r.team !=rc.getTeam()) {
-                    enemyHQ = r.location;
-                }
-            }
-        }
-        if (!Pathfinding.locIsNull(enemyHQ)) {
+        // Check if offense design school
+        if (!Pathfinding.locIsNull(enemyHQ) && rc.getLocation().isWithinDistanceSquared(enemyHQ, 50)) {
             for (Direction dir : directions) {
-                if (rc.getRoundNum() > landscaperRound && offensiveLandscapersBuilt < 2) {
+                if (rc.getRoundNum() > landscaperRound && offensiveLandscapersBuilt < 3) {
                     if (tryBuild(RobotType.LANDSCAPER, dir)) {
                         offensiveLandscapersBuilt++;
-                        return;
+                        break;
                     }
                 }
             }
             return;
         }
-
 
         // Generate landscaper in random direction if able
         for (Direction dir : directions) {
@@ -706,6 +709,7 @@ public strictfp class RobotPlayer {
             for (RobotInfo r : nearby) {
                 if (r.type == RobotType.HQ && r.team !=rc.getTeam()) {
                     enemyHQ = r.location;
+                    communication.announceEnemyHQ(r.location);
                     System.out.println(">>>> FOUND ENEMY HQ AT" + enemyHQ);
                 }
             }
@@ -743,11 +747,16 @@ public strictfp class RobotPlayer {
 
     static void assignLandscaper() throws GameActionException {
         if (rc.getCooldownTurns() < 2) {
-            landscaperState = LandscaperState.DEFENSE;
+            System.out.println("assignLandscaper: enemy HQ is " + enemyHQ);
+            if (!Pathfinding.locIsNull(enemyHQ) && rc.getLocation().isWithinDistanceSquared(enemyHQ, 72)) {
+                landscaperState = LandscaperState.OFFENSE;
+            } else {
+                landscaperState = LandscaperState.DEFENSE;
+            }
         }
     }
 
-    static void runOffenseLandscaper() {
+    static void runOffenseLandscaper() throws GameActionException {
         /*
          * if (HQHealth < 50 or broadcast of death) {
          *      become defense
@@ -760,16 +769,18 @@ public strictfp class RobotPlayer {
          * 2. if not found, then go scouting
          */
         if (enemyHQ != null) {
-            if (rc.canSenseLocation(enemyHQ)) {
-                for (RobotInfo info: rc.senseNearbyRobots()) {
-                    if (info.team == rc.getTeam().opponent()) {
-                        // move towards it
-                        // attack it
-                        // break
-                    }
+            if (rc.getLocation().isWithinDistanceSquared(enemyHQ, 2)) {
+                Direction enemyHQDir = rc.getLocation().directionTo(enemyHQ);
+                Direction digHere = enemyHQDir.opposite();
+                while (rc.canDepositDirt(enemyHQDir)) {
+                    rc.depositDirt(enemyHQDir);
+                }
+                while (rc.canDigDirt(digHere)) {
+                    rc.digDirt(digHere);
                 }
             } else {
-                // while (moveToTarget(enemyHQ)) {}
+                System.out.println("TRAVELING TO ENEMY HQ AT: " + enemyHQ);
+                pathfinding.travelTo(enemyHQ);
             }
         }
     }
