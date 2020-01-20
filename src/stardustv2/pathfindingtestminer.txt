@@ -1,0 +1,25 @@
+static void runMiner() throws GameActionException {
+        pathfinding.drawPersistentMLine();
+        if (minerState == MinerState.SCOUTING && rc.isReady()) {
+            MapLocation scoutTo;
+            switch (sequentialID) {
+                case 2:
+                    scoutTo = new MapLocation(1, 1);
+                    break;
+                case 3:
+                    scoutTo = new MapLocation(1, mapHeight - 1);
+                    break;
+                case 4:
+                    scoutTo = new MapLocation(mapWidth - 1, 1);
+                    break;
+                default:
+                    scoutTo = new MapLocation(mapWidth - 1, mapHeight - 1);
+                    break;
+            }
+            System.out.println("Miner " + sequentialID + " attempting to move to location " + scoutTo);
+            if (!pathfinding.travelTo(scoutTo)) {
+                System.out.println("Miner " + sequentialID + " movement unsuccessful");
+                minerState = MinerState.MINING;
+            }
+        }
+    }
