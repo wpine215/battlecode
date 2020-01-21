@@ -58,9 +58,84 @@ public strictfp class DroneUtil {
         rewindingToObstacle = false;
     }
 
-    public boolean travelTo(MapLocation dest, String style) throws GameActionException {
-        // Returns true if movement on course
-        // Returns false if journey complete or obstacle encountered
+
+
+
+
+
+    public int collectByID(MapLocation goal, int collectID) throws GameActionException {
+      
+      // Returns -1 if carrying other robot 
+      // Returns 0 if robot picked up
+      // Returns 1 if already complete
+
+      // Returns 10 if robot not found once approaching destination
+      // Returns 11 if on course to location
+      // Returns 12 if on course to location with obstacle
+
+      // Returns 13 if reached destination and robot not visible (should be impossible)
+      // Returns 14 if on course to visible robot
+      // Returns 15 if on course to visible robot with obstacle
+     
+      
+      int outputCode = 10;
+    
+      RobotInfo self = rc.senseRobot(rc.getID());
+      int heldID = self.getHeldUnitID();
+
+      if(heldID == collectID)
+        outputCode = 0;
+      else if (heldID > 0)
+        outputCode = -1;
+
+      else {
+
+        MapLocation dest = goal;
+
+        boolean targetVisible = false;
+        RobotInfo target;
+
+        if (self.getHeldUnitID() == collectID){
+          outputCode = 1;
+        }
+
+        else if (rc.canSenseRobot(collectID)) {
+          target = rc.senseRobot(collectID);
+          dest = target.getLocation();
+          targetVisible = true;
+          int dx = dest.x-rc.getLocation().x;
+          int dy = dest.y-rc.getLocation().y;
+
+          if ((dx == -1 || dx == 0 || dx == 1) &&
+              (dy == -1 || dy == 0 || dy == 1)) {
+            if(rc.canPickUpUnit(collectID)) {
+              rc.pickUpUnit(collectID);
+              outputCode = 20;
+            }
+          }
+        }
+      
+        int travelToCode = 0;
+        
+        travelToCode = travelTo(dest, "linear");
+
+        outputCode += travelToCode;
+
+        if (targetVisible)
+          outputCode += 3;
+
+      }
+
+      return outputCode;
+
+    }
+
+
+    public int travelTo(MapLocation dest, String style) throws GameActionException {
+      
+        // Returns 0 if travel complete
+        // Returns 1 if on course
+        // Returns 2 if on course with obstacle
 
         int dx = dest.x-rc.getLocation().x;
         int dy = dest.y-rc.getLocation().y;
@@ -69,7 +144,7 @@ public strictfp class DroneUtil {
         if (dy == 0 && dx == 0) {
             System.out.println(">>>>> Already at destination!");
             locationHistory.clear();
-            return false;
+            return 0;
         }
 
         locationHistory.add(rc.getLocation());
@@ -87,7 +162,7 @@ public strictfp class DroneUtil {
 
             rc.move(nextDir);
             currentDirection = nextDir;
-            return true;
+            return 1;
 
         } else {
           
@@ -96,7 +171,6 @@ public strictfp class DroneUtil {
             obstacleEncounteredAt = rc.getLocation();
 
             boolean moved = false;
-            boolean clockwise = true;
             Direction dirCW = nextDir.rotateRight();
             Direction dirCCW = nextDir.rotateLeft();
             int variance = 1;
@@ -152,7 +226,7 @@ public strictfp class DroneUtil {
               System.out.println(">>>>> Cannot move");
             }
         }
-        return false;
+        return 2;
     }
 
     // This looks disgusting but it's effective
