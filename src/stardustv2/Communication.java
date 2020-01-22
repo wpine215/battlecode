@@ -35,11 +35,11 @@ public strictfp class Communication {
         Communication.rc = rc;
     }
 
-    public void trySendGenesisBlock(MapLocation HQ, int cost) throws GameActionException {
+    public void trySendGenesisBlock(MapLocation HQ, int HQID, int cost) throws GameActionException {
         if (rc.getRoundNum() == 1) {
             int HQSerialized = serializeLoc(HQ);
             int firstChunk = (generateValidationInt(1) * LOWER_CODE_BITS) + CODE_GENESIS;
-            int[] gMsg = new int[]{firstChunk, HQSerialized, 0, 0, 0, 0, 0};
+            int[] gMsg = new int[]{firstChunk, HQSerialized, HQID, 0, 0, 0, 0};
             send(gMsg, cost);
         }
     }
@@ -288,22 +288,38 @@ public strictfp class Communication {
         return result;
     }
 
-    public MapLocation getHQCoordinates() throws GameActionException {
-        if (rc.getRoundNum() <= 1) return rc.getLocation();
+    public Transaction getGenesisBlock() throws GameActionException {
+        if (rc.getRoundNum() <= 1) return null;
         Transaction[] genesisBlock = rc.getBlock(1);
         for (Transaction t : genesisBlock) {
             if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_GENESIS) {
-                return deserializeLoc(t.getMessage()[1]);
+                return t;
             }
         }
         Transaction[] nextGenesisBlock = rc.getBlock(2);
         for (Transaction t : nextGenesisBlock) {
             if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_GENESIS) {
-                return deserializeLoc(t.getMessage()[1]);
+                return t;
             }
+        }
+        return null;
+    }
+
+    public MapLocation getHQCoordinates(Transaction genesisBlock) throws GameActionException {
+        if (genesisBlock != null) {
+            return deserializeLoc(genesisBlock.getMessage()[1]);
         }
         return rc.getLocation();
     }
+
+    public int getHQID(Transaction genesisBlock) throws GameActionException {
+        if (genesisBlock != null) {
+            return genesisBlock.getMessage()[2];
+        }
+        return -1;
+    }
+
+
 
     public boolean send(int[] msg, int cost) throws GameActionException {
         if (cost < 1) return false;

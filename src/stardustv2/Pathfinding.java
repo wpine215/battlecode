@@ -17,6 +17,14 @@ public strictfp class Pathfinding {
             Direction.NORTHWEST
     };
 
+    enum MapEdge {
+        UNASSIGNED,
+        NORTH,
+        SOUTH,
+        EAST,
+        WEST
+    }
+
     enum ObstacleDir {
         UNASSIGNED,
         LEFT,
@@ -26,6 +34,7 @@ public strictfp class Pathfinding {
     static int mapWidth;
     static boolean followingObstacle;
     static boolean alreadyHitMapEdge;
+    static MapEdge lastMapEdge = MapEdge.UNASSIGNED;
     static boolean rewindingToObstacle;
     static MapLocation obstacleEncounteredAt;
     static ObstacleDir obstacleDir;
@@ -163,16 +172,18 @@ public strictfp class Pathfinding {
         }
 
         // We encountered a map edge
-        if (isLocationMapEdge(rc.getLocation())) {
-            if (alreadyHitMapEdge) {
+        if (isLocationMapEdge(rc.getLocation()) && lastEightLocations.size() > 1) {
+            if (alreadyHitMapEdge && lastMapEdge != getMapEdge(rc.getLocation())) {
                 System.out.println(">>>>> Hit two map edges!");
                 alreadyHitMapEdge = false;
+                lastMapEdge = MapEdge.UNASSIGNED;
                 currentMLine.clear();
                 currentMLineSet.clear();
                 locationHistory.clear();
                 return false;
             } else {
                 alreadyHitMapEdge = true;
+                lastMapEdge = getMapEdge(rc.getLocation());
                 currentDirection = currentDirection.opposite();
                 if (obstacleDir == ObstacleDir.LEFT) {
                     obstacleDir = ObstacleDir.RIGHT;
@@ -240,6 +251,21 @@ public strictfp class Pathfinding {
 
     public static boolean isLocationMapEdge(MapLocation loc) throws GameActionException {
         return loc.x == 0 || loc.x == mapWidth-1 || loc.y == 0 || loc.y == mapHeight-1;
+    }
+
+    public static MapEdge getMapEdge(MapLocation loc) throws GameActionException {
+        if (loc.x == 0) {
+            return MapEdge.WEST;
+        } else if (loc.x == mapWidth - 1) {
+            return MapEdge.EAST;
+        }
+
+        if (loc.y == 0) {
+            return MapEdge.NORTH;
+        } else if (loc.y == mapHeight - 1) {
+            return MapEdge.SOUTH;
+        }
+        return MapEdge.UNASSIGNED;
     }
 
     public static boolean locIsNull(MapLocation loc) throws GameActionException {
