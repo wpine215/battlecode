@@ -99,7 +99,6 @@ public strictfp class RobotPlayer {
     static int offensiveLandscapersBuilt = 0;
     static boolean wallBuilt;
     static Direction wallDirection;
-//    static Direction[] wallQueue;
     static ArrayList<Direction> wallQueue;
     static LandscaperState landscaperState = LandscaperState.UNASSIGNED;
 
@@ -938,6 +937,10 @@ public strictfp class RobotPlayer {
         }
     }
 
+    static void isWallBuilt() throws GameActionException {
+
+    }
+
     static void runOffenseLandscaper() throws GameActionException {
         if (enemyHQ != null) {
             if (rc.getLocation().isWithinDistanceSquared(enemyHQ, 2)) {
@@ -945,7 +948,7 @@ public strictfp class RobotPlayer {
                 Direction digHere = enemyHQDir.opposite();
                 while (rc.canDepositDirt(enemyHQDir)) {
 //                     TODO: REMOVE THIS!!! TEMPORARY PLACEHOLDER TO TEST DEFENSE IN DEVELOPMENT!
-                    rc.depositDirt(enemyHQDir);
+//                    rc.depositDirt(enemyHQDir);
                 }
                 while (rc.canDigDirt(digHere)) {
                     rc.digDirt(digHere);
@@ -1035,6 +1038,7 @@ public strictfp class RobotPlayer {
         // TODO: finish this!
         if (rc.canSenseLocation(localHQ)) {
             if (!tryBuildWall()) {
+                System.out.println("WALL HAS BEEN FULLY BUILT!");
                 return;
             }
         } else {
@@ -1049,7 +1053,6 @@ public strictfp class RobotPlayer {
         Direction empty = null;
         // Rebuild wall queue with direction opposite design school first
         if (wallQueue == null) {
-//            wallQueue = new Direction[8];
             wallQueue = new ArrayList<>();
             MapLocation DS = rc.getLocation();
             RobotInfo[] nearby = rc.senseNearbyRobots(2, rc.getTeam());
@@ -1069,56 +1072,23 @@ public strictfp class RobotPlayer {
                 wallQueue.add(temp);
             }
 
-            temp = rotateXTimesLeft(origin, 1);
-            if (rc.onTheMap(localHQ.add(temp))
-                    && !dirtDifferenceAbove3(localHQ, localHQ.add(temp))
-                    && !locationIsWallDeadzone(temp)) {
-                wallQueue.add(temp);
-            }
+            for (int i = 1; i <= 4; i++) {
+                temp = rotateXTimesLeft(origin, i);
+                if (rc.onTheMap(localHQ.add(temp))
+                        && !dirtDifferenceAbove3(localHQ, localHQ.add(temp))
+                        && !locationIsWallDeadzone(temp)) {
+                    wallQueue.add(temp);
+                }
 
-            temp = rotateXTimesRight(origin, 1);
-            if (rc.onTheMap(localHQ.add(temp))
-                    && !dirtDifferenceAbove3(localHQ, localHQ.add(temp))
-                    && !locationIsWallDeadzone(temp)) {
-                wallQueue.add(temp);
+                if (i != 4) {
+                    temp = rotateXTimesRight(origin, i);
+                    if (rc.onTheMap(localHQ.add(temp))
+                            && !dirtDifferenceAbove3(localHQ, localHQ.add(temp))
+                            && !locationIsWallDeadzone(temp)) {
+                        wallQueue.add(temp);
+                    }
+                }
             }
-
-            temp = rotateXTimesLeft(origin, 2);
-            if (rc.onTheMap(localHQ.add(temp))
-                    && !dirtDifferenceAbove3(localHQ, localHQ.add(temp))
-                    && !locationIsWallDeadzone(temp)) {
-                wallQueue.add(temp);
-            }
-
-            temp = rotateXTimesRight(origin, 2);
-            if (rc.onTheMap(localHQ.add(temp))
-                    && !dirtDifferenceAbove3(localHQ, localHQ.add(temp))
-                    && !locationIsWallDeadzone(temp)) {
-                wallQueue.add(temp);
-            }
-
-            temp = rotateXTimesLeft(origin, 3);
-            if (rc.onTheMap(localHQ.add(temp))
-                    && !dirtDifferenceAbove3(localHQ, localHQ.add(temp))
-                    && !locationIsWallDeadzone(temp)) {
-                wallQueue.add(temp);
-            }
-
-            temp = rotateXTimesRight(origin, 3);
-            if (rc.onTheMap(localHQ.add(temp))
-                    && !dirtDifferenceAbove3(localHQ, localHQ.add(temp))
-                    && !locationIsWallDeadzone(temp)) {
-                wallQueue.add(temp);
-            }
-
-            temp = rotateXTimesLeft(origin, 4);
-            if (rc.onTheMap(localHQ.add(temp))
-                    && !dirtDifferenceAbove3(localHQ, localHQ.add(temp))
-                    && !locationIsWallDeadzone(temp)) {
-                wallQueue.add(temp);
-            }
-
-//            System.out.println("GENERATED WALLQUEUE: " + Arrays.toString(wallQueue));
         }
 
         for (Direction dir: wallQueue) {
@@ -1156,9 +1126,5 @@ public strictfp class RobotPlayer {
 
         return true;
     }
-
-    //////////////////////////////////////////////////
-    // OTHER FUNCTIONS
-    //////////////////////////////////////////////////
 
 }
