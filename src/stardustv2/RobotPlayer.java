@@ -1,6 +1,7 @@
 package stardustv2;
 import battlecode.common.*;
 
+import java.nio.file.Path;
 import java.util.*;
 
 enum Quadrant {
@@ -97,7 +98,7 @@ public strictfp class RobotPlayer {
     // Landscaper-specific variables
     static int landscapersBuilt = 0;
     static int offensiveLandscapersBuilt = 0;
-    static boolean wallBuilt;
+    static boolean wallBuilt = false;
     static Direction wallDirection;
     static ArrayList<Direction> wallQueue;
     static LandscaperState landscaperState = LandscaperState.UNASSIGNED;
@@ -937,8 +938,60 @@ public strictfp class RobotPlayer {
         }
     }
 
-    static void isWallBuilt() throws GameActionException {
+    static boolean isWallBuilt() throws GameActionException {
+        Direction empty = null;
+        // Rebuild wall queue with direction opposite design school first
+        if (wallQueue == null) {
+            wallQueue = new ArrayList<>();
+            MapLocation DS = rc.getLocation();
+            RobotInfo[] nearby = rc.senseNearbyRobots(18, rc.getTeam());
+            for (RobotInfo ri : nearby) {
+                if (ri.getType() == RobotType.DESIGN_SCHOOL) {
+                    DS = ri.location;
+                }
+            }
 
+            Direction temp;
+            Direction origin = DS.directionTo(localHQ);
+
+            temp = origin;
+            if (rc.onTheMap(localHQ.add(temp))
+                    && !dirtDifferenceAbove3(localHQ, localHQ.add(temp))
+                    && !locationIsWallDeadzone(temp)) {
+                wallQueue.add(temp);
+            }
+
+            for (int i = 1; i <= 4; i++) {
+                temp = rotateXTimesLeft(origin, i);
+                if (rc.onTheMap(localHQ.add(temp))
+                        && !dirtDifferenceAbove3(localHQ, localHQ.add(temp))
+                        && !locationIsWallDeadzone(temp)) {
+                    wallQueue.add(temp);
+                }
+
+                if (i != 4) {
+                    temp = rotateXTimesRight(origin, i);
+                    if (rc.onTheMap(localHQ.add(temp))
+                            && !dirtDifferenceAbove3(localHQ, localHQ.add(temp))
+                            && !locationIsWallDeadzone(temp)) {
+                        wallQueue.add(temp);
+                    }
+                }
+            }
+        }
+
+        for (Direction dir: wallQueue) {
+            System.out.println("IS WALL BUILT: TRYING WALLQUEUE DIRECTION: " + dir + " AT COORDINATES " + new MapLocation(localHQ.x + dir.dx, localHQ.y + dir.dy));
+            MapLocation temp = new MapLocation(localHQ.x + dir.dx, localHQ.y + dir.dy);
+            if (!rc.canSenseLocation(temp)
+                    || !rc.isLocationOccupied(temp)
+                    || (rc.isLocationOccupied(temp) && rc.senseRobotAtLocation(temp).getType() != RobotType.LANDSCAPER)) {
+                empty = dir;
+                break;
+            }
+        }
+
+        return empty == null;
     }
 
     static void runOffenseLandscaper() throws GameActionException {
@@ -997,7 +1050,56 @@ public strictfp class RobotPlayer {
 
                 RobotInfo otherBot = rc.senseRobotAtLocation(new MapLocation(rc.getLocation().x + wallDirection.dx, rc.getLocation().y + wallDirection.dy));
 
-                if (rc.canDepositDirt(Direction.CENTER)) {
+                if (!wallBuilt && isWallBuilt()) {
+                    wallBuilt = true;
+                    System.out.println(">>>>>>>>>>>> WALL IS FULLY BUILT!!!");
+                }
+
+                // Generate alternate deposit queue
+                ArrayList<MapLocation> alternateDeposit = new ArrayList<>();
+                Direction oppositeHQ = rc.getLocation().directionTo(localHQ).opposite();
+                MapLocation leftSideLoc;
+                MapLocation rightSideLoc;
+                if (oppositeHQ == Direction.NORTH
+                        || oppositeHQ == Direction.SOUTH
+                        || oppositeHQ == Direction.WEST
+                        || oppositeHQ == Direction.EAST) {
+                    leftSideLoc = rc.adjacentLocation(rotateXTimesLeft(oppositeHQ, 2));
+                    rightSideLoc = rc.adjacentLocation(rotateXTimesRight(oppositeHQ, 2));
+                } else {
+                    leftSideLoc = rc.adjacentLocation(rotateXTimesLeft(oppositeHQ, 3));
+                    rightSideLoc = rc.adjacentLocation(rotateXTimesRight(oppositeHQ, 3));
+                }
+
+                if (wallBuilt
+                        || (rc.isLocationOccupied(leftSideLoc) && rc.senseRobotAtLocation(leftSideLoc).getType() == RobotType.LANDSCAPER)) {
+                    alternateDeposit.add(leftSideLoc);
+                }
+                if (wallBuilt
+                        || (rc.isLocationOccupied(rightSideLoc) && rc.senseRobotAtLocation(rightSideLoc).getType() == RobotType.LANDSCAPER)) {
+                    alternateDeposit.add(rightSideLoc);
+                }
+
+                int minAltElevation = 9999;
+                MapLocation minAltLocation = new MapLocation(-1, -1);
+                if (alternateDeposit.size() == 2) {
+                    if (rc.senseElevation(alternateDeposit.get(0)) < rc.senseElevation(alternateDeposit.get(1))) {
+                        minAltLocation = alternateDeposit.get(0);
+                    } else {
+                        minAltLocation = alternateDeposit.get(1);
+                    }
+                    minAltElevation = rc.senseElevation(minAltLocation);
+                } else if (alternateDeposit.size() == 1) {
+                    minAltLocation = alternateDeposit.get(0);
+                    minAltElevation = rc.senseElevation(minAltLocation);
+                }
+
+                if (minAltElevation != 9999
+                        && !Pathfinding.locIsNull(minAltLocation)
+                        && minAltElevation + 5 < rc.senseElevation(rc.getLocation())
+                        && rc.canDepositDirt(rc.getLocation().directionTo(minAltLocation))) {
+                    rc.depositDirt(rc.getLocation().directionTo(minAltLocation));
+                } else if (rc.canDepositDirt(Direction.CENTER)) {
                     rc.depositDirt(Direction.CENTER);
                 }
 
