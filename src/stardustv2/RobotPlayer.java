@@ -99,6 +99,7 @@ public strictfp class RobotPlayer {
     static int landscapersBuilt = 0;
     static int offensiveLandscapersBuilt = 0;
     static boolean wallBuilt = false;
+    static int roundsSinceWallBuilt = 0;
     static Direction wallDirection;
     static ArrayList<Direction> wallQueue;
     static LandscaperState landscaperState = LandscaperState.UNASSIGNED;
@@ -856,6 +857,7 @@ public strictfp class RobotPlayer {
     }
 
     static void goBuildAuxiliaryRefinery() throws GameActionException {
+        System.out.println("Trying to build extra refinery!");
         for (Direction dir : directions) {
             if (!rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, 25)) {
                 if (tryBuild(RobotType.REFINERY, dir)) {
@@ -1001,7 +1003,7 @@ public strictfp class RobotPlayer {
                 Direction digHere = enemyHQDir.opposite();
                 while (rc.canDepositDirt(enemyHQDir)) {
 //                     TODO: REMOVE THIS!!! TEMPORARY PLACEHOLDER TO TEST DEFENSE IN DEVELOPMENT!
-//                    rc.depositDirt(enemyHQDir);
+                    rc.depositDirt(enemyHQDir);
                 }
                 while (rc.canDigDirt(digHere)) {
                     rc.digDirt(digHere);
@@ -1048,11 +1050,13 @@ public strictfp class RobotPlayer {
                     }
                 }
 
-                RobotInfo otherBot = rc.senseRobotAtLocation(new MapLocation(rc.getLocation().x + wallDirection.dx, rc.getLocation().y + wallDirection.dy));
-
                 if (!wallBuilt && isWallBuilt()) {
                     wallBuilt = true;
                     System.out.println(">>>>>>>>>>>> WALL IS FULLY BUILT!!!");
+                }
+
+                if (wallBuilt && roundsSinceWallBuilt < 10) {
+                    roundsSinceWallBuilt++;
                 }
 
                 // Generate alternate deposit queue
@@ -1071,12 +1075,26 @@ public strictfp class RobotPlayer {
                     rightSideLoc = rc.adjacentLocation(rotateXTimesRight(oppositeHQ, 3));
                 }
 
-                if (wallBuilt
-                        || (rc.isLocationOccupied(leftSideLoc) && rc.senseRobotAtLocation(leftSideLoc).getType() == RobotType.LANDSCAPER)) {
+                // Check if local design school is flooded/destroyed
+                boolean localDSDestroyed = true;
+                RobotInfo[] nearbyRI = rc.senseNearbyRobots(rc.getCurrentSensorRadiusSquared(), rc.getTeam());
+                for (RobotInfo ri : nearbyRI) {
+                    if (ri.getType() == RobotType.DESIGN_SCHOOL) {
+                        localDSDestroyed = false;
+                        break;
+                    }
+                }
+
+                if ((wallBuilt && roundsSinceWallBuilt == 10) || localDSDestroyed
+                        || rc.isLocationOccupied(rightSideLoc) && rc.senseRobotAtLocation(rightSideLoc).getTeam() != rc.getTeam()) { // TODO: this is a temporary fix until we get defensive drones (then, only remove enemy static buildings)
+//                        || (rc.isLocationOccupied(leftSideLoc) && rc.senseRobotAtLocation(leftSideLoc).getType() == RobotType.LANDSCAPER
+//                        || localDSDestroyed)) {
                     alternateDeposit.add(leftSideLoc);
                 }
-                if (wallBuilt
-                        || (rc.isLocationOccupied(rightSideLoc) && rc.senseRobotAtLocation(rightSideLoc).getType() == RobotType.LANDSCAPER)) {
+                if ((wallBuilt && roundsSinceWallBuilt == 10) || localDSDestroyed
+                        || rc.isLocationOccupied(rightSideLoc) && rc.senseRobotAtLocation(rightSideLoc).getTeam() != rc.getTeam()) { // TODO: this is a temporary fix until we get defensive drones (then, only remove enemy static buildings)
+//                        || (rc.isLocationOccupied(rightSideLoc) && rc.senseRobotAtLocation(rightSideLoc).getType() == RobotType.LANDSCAPER
+//                        || localDSDestroyed)) {
                     alternateDeposit.add(rightSideLoc);
                 }
 
@@ -1112,27 +1130,35 @@ public strictfp class RobotPlayer {
                     }
                 }
 
+                RobotInfo otherBot = rc.senseRobotAtLocation(new MapLocation(rc.getLocation().x + wallDirection.dx, rc.getLocation().y + wallDirection.dy));
+
                 if (rc.isReady() && rc.getDirtCarrying() < 25) {
+                    System.out.println("NO COOLDOWN!");
                     if (rc.canDigDirt(wallDirection)
-                            && !(otherBot != null && otherBot.team == rc.getTeam() && otherBot.getType() != RobotType.DESIGN_SCHOOL)) {
+                            && !(otherBot != null && otherBot.team == rc.getTeam() && otherBot.getType() == RobotType.DESIGN_SCHOOL)) {
+                        System.out.println("CAN DIG DIRT FORWARD");
                         rc.digDirt(wallDirection);
                     } else if (rc.canDigDirt(wallDirection.rotateLeft())) {
                         System.out.println("CAN DIG DIRT ROTATE LEFT");
                         System.out.println("CHECKING ROBOT OCCUPATION (ROTATE LEFT) AT " + rc.adjacentLocation(wallDirection.rotateLeft()));
                         RobotInfo temp = rc.senseRobotAtLocation(rc.adjacentLocation(wallDirection.rotateLeft()));
-                        if (!(otherBot != null && otherBot.team == rc.getTeam() && otherBot.getType() != RobotType.DESIGN_SCHOOL)) {
+//                        if (!(otherBot != null && otherBot.team == rc.getTeam() && otherBot.getType() != RobotType.DESIGN_SCHOOL)) {
+                        if (!(temp != null && temp.team == rc.getTeam() && temp.getType() == RobotType.DESIGN_SCHOOL)) {
                             rc.digDirt(wallDirection.rotateLeft());
                         }
                     } else if (rc.canDigDirt(wallDirection.rotateRight())) {
                         System.out.println("CAN DIG DIRT ROTATE RIGHT");
                         System.out.println("CHECKING ROBOT OCCUPATION (ROTATE RIGHT) AT " + rc.adjacentLocation(wallDirection.rotateRight()));
                         RobotInfo temp = rc.senseRobotAtLocation(rc.adjacentLocation(wallDirection.rotateRight()));
-                        if (!(otherBot != null && otherBot.team == rc.getTeam() && otherBot.getType() != RobotType.DESIGN_SCHOOL)) {
+//                        if (!(otherBot != null && otherBot.team == rc.getTeam() && otherBot.getType() != RobotType.DESIGN_SCHOOL)) {
+                        if (!(temp != null && temp.team == rc.getTeam() && temp.getType() == RobotType.DESIGN_SCHOOL)) {
                             rc.digDirt(wallDirection.rotateRight());
                         }
                     }
                 }
                 return;
+            } else {
+                System.out.println("wall direction is null :(");
             }
         } catch (GameActionException e) {}
 
