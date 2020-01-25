@@ -33,6 +33,12 @@ enum LandscaperState {
     LATTICE
 }
 
+enum LatticeState {
+    LATTICE_WALL,
+    NOT_ON_LATTICE,
+    ON_LATTICE
+}
+
 enum DroneState {
     PASSIVE,
     TRANSPORT,
@@ -103,11 +109,13 @@ public strictfp class RobotPlayer {
     static int roundsSinceWallBuilt = 0;
     static Direction wallDirection;
     static ArrayList<Direction> wallQueue;
-    static LandscaperState landscaperState = LandscaperState.UNASSIGNED;
+    static LandscaperState landscaperState = LandscaperState.LATTICE_WALL;
 
     static boolean latticeWallBuilt = false;
     static List<MapLocation> latticeWallCoordinates = new ArrayList<>();
     static int LATTICE_ELEVATION = 8;
+    static MapLocation latticeWallLoc;
+    static LatticeState latticeState = LatticeState.UNASSIGNED;
 
     // Some constants
     final static int soupNeededToBuildDesignSchool = 215;
@@ -1179,8 +1187,25 @@ public strictfp class RobotPlayer {
     }
 
     static void runLatticeLandscaper() {
+        switch (latticeState) {
+            case LATTICE_WALL:      buildLatticeWall();         break;
+            case NOT_ON_LATTICE:    getOnLattice();             break;
+            case ON_LATTICE:        lattice();                  break;
+        }
+    }
+
+    static void buildLatticeWall() {
+        if (!latticeWallBuiltBroadcast()) {
+            latticeState = LatticeState.NOT_ON_LATTICE;
+            return;
+        }
+
         if (latticeWallCoordinates.length == 0) {
             initializeLatticeWall();
+        }
+
+        if (!latticeWallBuilt) {
+            latticeWallBuilt = isLatticeWallBuilt();
         }
 
         if (!latticeWallBuilt) {
@@ -1210,9 +1235,14 @@ public strictfp class RobotPlayer {
             // set that coordinate as yours
             // once completed, pick the next location or be finished with the wall and start latticing
         }
-        if (!isLatticeWallBuilt()) {
-            
-        }
+    }
+
+    static void getOnLattice() {
+
+    }
+
+    static void lattice() {
+
     }
 
     // need HQ to broadcast that LatticeWall is completed
