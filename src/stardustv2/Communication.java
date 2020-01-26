@@ -199,7 +199,11 @@ public strictfp class Communication {
             Transaction[] rbBlock = rc.getBlock(lastRebroadcast);
             for (Transaction t : rbBlock) {
                 if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_REBROADCAST) {
-                    return t;
+                    if (validate(t.getMessage()[0], lastRebroadcast)) {
+                        return t;
+                    } else {
+                        System.out.println("TAMPERED REBROADCAST MESSAGE DETECTED - IGNORING");
+                    }
                 }
             }
         }
@@ -373,6 +377,6 @@ public strictfp class Communication {
     private static boolean validate(int hash, int round) throws GameActionException {
         int parsedHash = hash / LOWER_CODE_BITS;
         int validRound = (parsedHash - VALIDATION_OFFSET) / 2;
-        return validRound <= round && validRound > round - 5;
+        return validRound <= round && validRound > round - 4;
     }
 }
