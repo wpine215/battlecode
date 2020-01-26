@@ -35,6 +35,10 @@ public strictfp class DroneUtil {
     static Direction currentDirection;
     static Set<MapLocation> locationHistory;
 
+    static MapLocation allyHQLocation;
+    static MapLocation enemyHQLocation;
+
+
     public DroneUtil(RobotController rc) {
         DroneUtil.rc = rc;
         mapHeight = rc.getMapHeight();
