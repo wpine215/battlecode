@@ -29,7 +29,14 @@ enum MiningState {
 enum LandscaperState {
     UNASSIGNED,
     OFFENSE,
-    DEFENSE
+    DEFENSE,
+    LATTICE
+}
+
+enum LatticeState {
+    LATTICE_WALL,
+    NOT_ON_LATTICE,
+    ON_LATTICE
 }
 
 enum DroneState {
@@ -103,6 +110,12 @@ public strictfp class RobotPlayer {
     static Direction wallDirection;
     static ArrayList<Direction> wallQueue;
     static LandscaperState landscaperState = LandscaperState.UNASSIGNED;
+
+    static boolean latticeWallBuilt = false;
+    static List<MapLocation> latticeWallCoordinates = new ArrayList<>();
+    static int LATTICE_ELEVATION = 8;
+    static MapLocation latticeWallLoc;
+    static LatticeState latticeState = LatticeState.LATTICE_WALL;
 
     // Some constants
     final static int soupNeededToBuildDesignSchool = 215;
@@ -431,6 +444,7 @@ public strictfp class RobotPlayer {
             case UNASSIGNED:    assignLandscaper();     break;
             case OFFENSE:       runOffenseLandscaper(); break;
             case DEFENSE:       runDefenseLandscaper(); break;
+            case LATTICE:       runLatticeLandscaper(); break;
         }
     }
 
@@ -1172,6 +1186,255 @@ public strictfp class RobotPlayer {
         } else {
             System.out.println("Trying to move to HQ!");
             pathfinding.travelTo(localHQ);
+        }
+    }
+
+    static void runLatticeLandscaper() {
+        switch (latticeState) {
+            case LATTICE_WALL:      buildLatticeWall();         break;
+            case NOT_ON_LATTICE:    getOnLattice();             break;
+            case ON_LATTICE:        lattice();                  break;
+        }
+    }
+
+    // build the lattice wall around HQ
+    static void buildLatticeWall() {
+        // check re-broadcast if the lattice wall has already been built
+        if (!latticeWallBuiltBroadcast()) {
+            latticeState = LatticeState.NOT_ON_LATTICE;
+            return;
+        }
+
+        // if you don't know where the wall is, define it
+        if (latticeWallCoordinates.size() == 0) {
+            initializeLatticeWall();
+        }
+
+        // check if the lattice wall has been built from what's visible to this landscaper
+        if (!latticeWallBuilt) {
+            latticeWallBuilt = isLatticeWallBuilt();
+        }
+
+        // if lattice wall not built:
+        // 1. get a location from the wall with its index (maybe create a new class for this)
+        // 2. if you're on it, then build it up
+        //      - if you're finished building it up, find the closest un-built not obstructed wall location and move towards it
+        //      - if there is none or its obstructed, then you're now on the lattice
+        // 3. if you can't get on it, then get on the lattice, build yourself up, and start going
+        //      - to get on the lattice, grab a lattice location and elevate yourself
+        //      - make sure you're connected to the lattice—if you're not certain, then connect yourself
+        // 4. if you're stuck inside the lattice wall, then you're gonna need to get picked up by drones
+        //      - there should be a few designated drones who circle over HQ in the bounds of the lattice walls and pick up anybody not on the lattice and move them onto it
+
+        // if lattice wall still not built, move on top of a lattice wall coordinate and build up
+        if (!latticeWallBuilt) {
+            MapLocation next_coordinate = nextLatticeWallCoordinate();
+            // if no next coordinate, wall is finished building
+            if (next_coordinate == null) {
+                latticeWallBuilt = true;
+                latticeState = LatticeState.NOT_ON_LATTICE;
+                // not sure if I'm supposed to return here
+                return;
+            }
+
+            // move towards the wall location
+            if (!pathfinding.travelTo(next_coordinate)) {
+                pathfinding.reset();
+                // if we're on top of the location, start depositing dirt here
+                // TODO: store the current wall location so that the current landscaper doesn't do the above work to find a new location
+                if (rc.getLocation().x == next_coordinate.x && rc.getlocation().y == next_coordinate.y) {
+                    if (rc.canDepositDirt(Direction.CENTER)) {
+                        rc.depositDirt(Direction.CENTER);
+                    }
+                    Direction digDirtFrom = getNextDig();
+                    if (digDirtFrom != null && rc.canDigDirt(digDirtFrom)) {
+                        rc.digDirt(digDirtFrom);
+                    }
+                }
+                // TODO: if you're not able to reach the wall location and you're 'inside the wall', then wait for a drone to pick you up
+            }
+        }
+    }
+
+    // if not on the lattice, get on a square that will be a part of the lattice and attach yourself to it
+    static void getOnLattice() {
+        // TODO: not sure if this function is even necessary but if so implement it
+    }
+
+    // build the lattice out
+    static void lattice() {
+        // TODO: decide the next location in getNextLattice() based on where enemyHQ is
+        Direction nextLattice = getNextLattice();
+        // if no nextLattice, then the next level of lattice blocks to build have been finished and progress can be made
+        if (nextLattice == null) {
+            // NOTE: latticeLocation is a location you're building the general lattice towards. For example, enemyHQ.
+            boolean result = pathfinding.travelTo(latticeLocation);
+            if (!result) {
+                // if can't move towards it, you're stuck in some weird corner.
+            }
+        } else {
+            // add to the lattice
+            depositDirt(nextLattice);
+        }
+    }
+
+    static void addToLattice() {
+        // depositDirt if carrying it
+        // fetch next digDirt location
+        // fetch next addToDirt location
+        Direction nextLattice = getNextLattice();
+        if (rc.canDepositDirt(nextLattice)) {
+            rc.depositDirt(nextLattice);
+        }
+
+        Direction digFrom = getNextDig();
+        if (rc.canDigDirt(digFrom)) {
+            rc.digDirt(digFrom);
+        }
+    }
+
+    // get one nearby location that you can dig from to build lattice
+    static Direction getNextDig() {
+        boolean xIsOdd = localHQ.x - rc.getLocation().x % 2 == 1;
+        boolean yIsOdd = localHQ.y - rc.getLocation().y % 2 == 1;
+
+        List<Direction> digOptions = new ArrayList<>();
+        if (xIsOdd && yIsOdd) {
+            digOptions.add(Direction.NORTHEAST);
+            digOptions.add(Direction.NORTHWEST);
+            digOptions.add(Direction.SOUTHEAST);
+            digOptions.add(Direction.SOUTHWEST);
+        } else if (xIsOdd) {
+            digOptions.add(Direction.EAST);
+            digOptions.add(Direction.WEST);
+        } else {
+            digOptions.add(Direction.NORTH);
+            digOptions.add(Direction.SOUTH);
+        }
+
+        for (Direction dir: digOptions) {
+            if (rc.canDigDirt(dir)) {
+                return dir;
+            }
+        }
+
+        return null;
+    }
+
+    // get next direction that is part of the lattice
+    static Direction getNextLattice() {
+        List<Direction> nextQueue = new ArrayList<>();
+
+        int xDifference;
+        int yDifference;
+
+        if (enemyHQ == null) {
+            xDifference = rc.getLocation().x - localHQ.x;
+            yDifference = rc.getLocation().y - localHQ.y;
+        } else {
+            xDifference = enemyHQ.x - rc.getLocation().x;
+            yDifference = enemyHQ.y - rc.getLocation().y;
+        }
+
+        Direction startDirection = null;
+        if (xDifference >= 0 && yDifference >= 0) {
+            startDirection = Direction.NORTHEAST;
+        } else if (xDifference < 0 && yDifference >= 0) {
+            startDirection = Direction.NORTHWEST;
+        } else if (xDifference >= 0 && yDifference < 0) {
+            startDirection = Direction.SOUTHEAST;
+        } else {
+            startDirection = Direction.SOUTHWEST;
+        }
+
+        nextQueue.add(startDirection);
+        nextQueue.add(startDirection.rotateLeft());
+        nextQueue.add(startDirection.rotateRight());
+        nextQueue.add(startDirection.rotateLeft().rotateLeft());
+        nextQueue.add(startDirection.rotateRight().rotateRight());
+
+        for (Direction dir: nextQueue) {
+            if (validLatticeLoc(new MapLocation(rc.getLocation().x + dir.dx, rc.getLocation().y + dir.dy))) {
+                return dir;
+            }
+        }
+
+        return null;
+    }
+
+    // checks if the lattice could exist at this location
+    static boolean validLatticeLoc(MapLocation loc) {
+        if (!rc.canSenseLocation(loc)) {
+            return false;
+        }
+
+        if (rc.onTheMap(loc) && onLattice(loc)
+            && rc.senseElevation(loc) - rc.senseElevation(rc.getLocation()) <= 20 
+            && rc.senseElevation(loc) - rc.senseElevation(rc.getLocation()) >= -20) {
+            return true;
+        }
+
+        return false;
+    }
+
+    // coordinate check for the lattice: do the coordinates match up?
+    static boolean onLattice(MapLocation loc) {
+        return localHQ.x - loc.x % 2 == 1 || localHQ.y - loc.y % 2 == 1;
+    }
+
+    // get the next coordinate on the lattice wall that needs to be build
+    // TODO: if a landscaper gets stuck or can't find the next one, it goes to regular lattice mode and starts building out
+    // TODO: store your map location
+    static MapLocation nextLatticeWallCoordinate() {
+        if (!latticeWallBuiltBroadcast()) {
+            for (MapLocation coordinate: latticeWallCoordinates) {
+                if (rc.canSenseLocation(coordinate) && rc.senseElevation(coordinate) < LATTICE_ELEVATION) {
+                    // move on top of that location
+                    // build it up to 8
+                    // grab the index of that location so you can try the other locations
+                    return coordinate;
+                }
+                // if can see it and not at specified elevation: go there and build coordinate
+                // in the future, if you already have a coordinate, check the next and previous
+                //      if both built, then you're free to start terraforming outwards
+            }
+        }
+        return null;
+    }
+
+
+    // manually initialize all the lattice wall coordinates
+    // TODO: probably want to have HQ do this as well
+    static void initializeLatticeWall() {
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x + 0, localHQ.y + 3));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x + 1, localHQ.y + 3));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x + 2, localHQ.y + 3));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x + 3, localHQ.y + 3));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x + 3, localHQ.y + 2));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x + 3, localHQ.y + 1));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x + 3, localHQ.y + 0));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x + 3, localHQ.y - 1));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x + 3, localHQ.y - 2));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x + 3, localHQ.y - 3));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x + 2, localHQ.y - 3));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x + 1, localHQ.y - 3));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x + 0, localHQ.y - 3));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x - 1, localHQ.y - 3));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x - 2, localHQ.y - 3));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x - 3, localHQ.y - 3));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x - 3, localHQ.y - 2));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x - 3, localHQ.y - 1));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x - 3, localHQ.y + 0));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x - 3, localHQ.y + 1));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x - 3, localHQ.y + 2));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x - 3, localHQ.y + 3));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x - 2, localHQ.y + 3));
+        tryAddLatticeWallCoordinate(new MapLocation(localHQ.x - 1, localHQ.y + 3));
+    }
+
+    static void tryAddLatticeWallCoordinate(MapLocation loc) {
+        if (rc.onTheMap(loc)) {
+            latticeWallCoordinates.add(loc);
         }
     }
 
