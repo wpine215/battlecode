@@ -27,6 +27,7 @@ public strictfp class DroneUtil {
     }
     static int mapHeight;
     static int mapWidth;
+    static MapLocation localHQ;
     static boolean followingObstacle;
     static boolean alreadyHitMapEdge;
     static boolean rewindingToObstacle;
@@ -35,12 +36,11 @@ public strictfp class DroneUtil {
     static Direction currentDirection;
     static Set<MapLocation> locationHistory;
 
-    static MapLocation allyHQLocation;
     static MapLocation enemyHQLocation;
 
-
-    public DroneUtil(RobotController rc) {
+    public DroneUtil(RobotController rc, MapLocation localHQ) {
         DroneUtil.rc = rc;
+        DroneUtil.localHQ = localHQ;
         mapHeight = rc.getMapHeight();
         mapWidth = rc.getMapWidth();
         followingObstacle = false;
@@ -61,11 +61,6 @@ public strictfp class DroneUtil {
         alreadyHitMapEdge = false;
         rewindingToObstacle = false;
     }
-
-
-
-
-
 
     public int collectByID(MapLocation goal, int collectID) throws GameActionException {
       
@@ -162,8 +157,7 @@ public strictfp class DroneUtil {
           nextDir = ttDiagFirst(dx, dy);
         }
 
-        if (rc.canMove(nextDir)) { // Drone can move
-
+        if (rc.canMove(nextDir) && !rc.adjacentLocation(nextDir).isWithinDistanceSquared(localHQ, 8)) { // Drone can move
             rc.move(nextDir);
             currentDirection = nextDir;
             return 1;
@@ -186,29 +180,28 @@ public strictfp class DroneUtil {
 
             // CW preferred (using XOR)
             if((Math.abs(slope) < 1) ^ (slope < 0)) {
-              while (variance < 4 && moved == false) {
-                if (rc.canMove(dirCW)) {
+              while (variance < 4 && !moved) {
+                if (rc.canMove(dirCW) && !rc.adjacentLocation(dirCW).isWithinDistanceSquared(localHQ, 8)) {
                   System.out.println(">>>>> Avoiding obstacle CW x" + variance);
                   finalDir = dirCW;
                   moved = true;
-                } else if (rc.canMove(dirCCW)){
+                } else if (rc.canMove(dirCCW) && !rc.adjacentLocation(dirCCW).isWithinDistanceSquared(localHQ, 8)) {
                   System.out.println(">>>>> Avoiding obstacle CCW x" + variance);
                   finalDir = dirCCW;
                   moved = true;
-                }
-                else {
+                } else {
                   variance++;
                   dirCW = dirCW.rotateRight();
                   dirCCW = dirCCW.rotateRight();
                 }
               }
             } else { // CCW preferred
-              while (variance < 4 && moved == false) {
-                if (rc.canMove(dirCCW)) {
+              while (variance < 4 && !moved) {
+                if (rc.canMove(dirCCW) && !rc.adjacentLocation(dirCCW).isWithinDistanceSquared(localHQ, 8)) {
                   System.out.println(">>>>> Avoiding obstacle CCW x" + variance);
                   finalDir = dirCCW;
                   moved = true;
-                } else if (rc.canMove(dirCW)){
+                } else if (rc.canMove(dirCW) && !rc.adjacentLocation(dirCW).isWithinDistanceSquared(localHQ, 8)){
                   System.out.println(">>>>> Avoiding obstacle CW x" + variance);
                   finalDir = dirCW;
                   moved = true;
@@ -223,7 +216,7 @@ public strictfp class DroneUtil {
 
             if (finalDir != nextDir) {
               rc.move(finalDir);
-            } else if (rc.canMove(dirCW.rotateRight())) {
+            } else if (rc.canMove(dirCW.rotateRight()) && !rc.adjacentLocation(dirCW).isWithinDistanceSquared(localHQ, 8)) {
               System.out.println(">>>>> Cannot advance, retreating");
               rc.move(dirCW.rotateRight());
             } else {

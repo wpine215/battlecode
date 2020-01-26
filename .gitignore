@@ -28,4 +28,6 @@ battlecode-scaffold.iws
 # Eclipse user-specific files
 .classpath
 .project
-.settings/
+.settings/*.zip
+.zip
+src/stardustv2/*.zip
