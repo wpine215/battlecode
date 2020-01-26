@@ -1208,6 +1208,16 @@ public strictfp class RobotPlayer {
             latticeWallBuilt = isLatticeWallBuilt();
         }
 
+        // if lattice wall not built:
+        // 1. get a location from the wall with its index (maybe create a new class for this)
+        // 2. if you're on it, then build it up
+        //      - if you're finished building it up, find the closest un-built not obstructed wall location and move towards it
+        //      - if there is none or its obstructed, then you're now on the lattice
+        // 3. if you can't get on it, then get on the lattice, build yourself up, and start going
+        //      - to get on the lattice, grab a lattice location and elevate yourself
+        //      - make sure you're connected to the lattice—if you're not certain, then connect yourself
+        // 4. if you're stuck inside the lattice wall, then you're gonna need to get picked up by drones
+        //      - there should be a few designated drones who circle over HQ in the bounds of the lattice walls and pick up anybody not on the lattice and move them onto it
         if (!latticeWallBuilt) {
             MapLocation next_coordinate = nextLatticeWallCoordinate();
             if (next_coordinate == null) {
@@ -1237,12 +1247,99 @@ public strictfp class RobotPlayer {
         }
     }
 
+    // 
     static void getOnLattice() {
 
     }
 
+    // lets say I have a lattice location I'm trying to go to
     static void lattice() {
+        // 1. pick a next location
+        // --> if location, add dirt to it
+        //      avoid locations of high elevation or very low depth
+        // --> if no location, move forwards
+        Direction nextLattice = getNextLattice();
+        if (nextLattice == null) {
+            boolean result = pathfinding.travelTo(latticeLocation);
+            if (!result) {
+                // go to another corner
+            }
+            // move forwards
+            // probably if you can't move forwards, move away
+            // just use travelTo dog
+        } else {
+            // build lattice function
+            depositDirt(nextLattice);
+        }
+    }
 
+    static void addToLattice() {
+        // depositDirt if carrying it
+        // fetch next digDirt location
+        // fetch next addToDirt location
+        // drop there
+        Direction nextLattice = getNextLattice();
+        if (rc.canDepositDirt(nextLattice)) {
+            rc.depositDirt(nextLattice);
+        }
+
+        
+    }
+
+    static Direction getNextLattice() {
+        List<Direction> nextQueue = new ArrayList<>();
+
+        int xDifference;
+        int yDifference;
+
+        if (enemyHQ == null) {
+            xDifference = rc.getLocation().x - localHQ.x;
+            yDifference = rc.getLocation().y - localHQ.y;
+        } else {
+            xDifference = enemyHQ.x - rc.getLocation().x;
+            yDifference = enemyHQ.y - rc.getLocation().y;
+        }
+
+        Direction startDirection = null;
+        if (xDifference >= 0 && yDifference >= 0) {
+            startDirection = Direction.NORTHEAST;
+        } else if (xDifference < 0 && yDifference >= 0) {
+            startDirection = Direction.NORTHWEST;
+        } else if (xDifference >= 0 && yDifference < 0) {
+            startDirection = Direction.SOUTHEAST;
+        } else {
+            startDirection = Direction.SOUTHWEST;
+        }
+
+        nextQueue.add(startDirection);
+        nextQueue.add(startDirection.rotateLeft());
+        nextQueue.add(startDirection.rotateRight());
+        nextQueue.add(startDirection.rotateLeft().rotateLeft());
+        nextQueue.add(startDirection.rotateRight().rotateRight());
+
+        for (Direction dir: nextQueue) {
+            if (validLatticeLoc(new MapLocation(rc.getLocation().x + dir.dx, rc.getLocation().y + dir.dy))) {
+                return dir;
+            }
+        }
+
+        return null;
+    }
+
+    static boolean validLatticeLoc(MapLocation loc) {
+        if (!rc.canSenseLocation(loc)) {
+            return false;
+        }
+
+        boolean isLattice = (localHQ.x - loc.x % 2 == 1) && (localHQ.y - loc.y % 2 == 1);
+
+        if (rc.onTheMap(loc) && isLattice 
+            && rc.senseElevation(loc) - rc.senseElevation(rc.getLocation()) <= 20 
+            && rc.senseElevation(loc) - rc.senseElevation(rc.getLocation()) >= -20) {
+            return true;
+        }
+
+        return false;
     }
 
     // need HQ to broadcast that LatticeWall is completed
