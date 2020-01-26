@@ -1,7 +1,6 @@
 package stardustv2;
 import battlecode.common.*;
 
-import javax.rmi.CORBA.Util;
 import java.util.*;
 
 enum Quadrant {
@@ -29,7 +28,8 @@ enum MiningState {
 enum LandscaperState {
     UNASSIGNED,
     OFFENSE,
-    DEFENSE
+    DEFENSE,
+    EXTRA_DEFENSE
 }
 
 enum DroneState {
@@ -41,17 +41,6 @@ enum DroneState {
 public strictfp class RobotPlayer {
     static RobotController rc;
 
-//    static Direction[] directions = {
-//        Direction.NORTH,
-//        Direction.NORTHEAST,
-//        Direction.EAST,
-//        Direction.SOUTHEAST,
-//        Direction.SOUTH,
-//        Direction.SOUTHWEST,
-//        Direction.WEST,
-//        Direction.NORTHWEST
-//    };
-
     static RobotType[] spawnedByMiner = {
         RobotType.REFINERY,
         RobotType.VAPORATOR,
@@ -60,59 +49,72 @@ public strictfp class RobotPlayer {
         RobotType.NET_GUN
     };
 
-    // Common variables
     static int mapHeight;
     static int mapWidth;
-    static MapLocation localHQ;
     static int localHQID;
+    static MapLocation localHQ;
     static MapLocation enemyHQ = new MapLocation(99,99); // assigned value is temporary
     static MapLocation[] possibleEnemyLocations;
     static int currentlyScoutingEnemyAt;
 
-    // HQ-specific variables
+    // HQ VARIABLES
     static int HQHealth = 50;
-    static int HQElevation;
     static int minerCount = 0;
     static boolean hasBuiltDefensiveDesignSchool = false;
     static boolean hasBuildOffensiveDesignSchool = false;
-    static int auxiliaryMinerRound = 1000;
+    static Direction[] bestMinerSpawns;
 
-    // Pathfinding-specific variables
+    // PATHFINDING VARIABLES
     static Pathfinding pathfinding;
     static Deque<MapLocation> travelQueue;
     static int nextMiningSector;
 
-    // Blockchain
+    // BLOCKCHAIN VARIABLES
     static Communication communication;
 
-    // Utility/general-purpose functions
+    // UTILITY VARIABLES
     static Utility ut;
 
-    // Miner-specific variables
+    // MINER VARIABLES
     static MinerState minerState;
     static MiningState miningState;
-    static ArrayList<MapLocation> refineries;
     static Set<Integer> soupSectors;
     static MapLocation lastSoupDeposit;
+    static ArrayList<MapLocation> refineries;
     static int refineryAccessAttempts = 0;
     static int unfruitfulRounds = 0;
-    static boolean minerHasBuiltDefensiveDS = false;
-    static boolean minerHasBuiltAuxiliaryRefinery = false;
-    static boolean minerHasBuiltDroneCenter = false;
+    static int HQLockout = 0;
 
-    // Landscaper-specific variables
+    // MINER (BUILDER) VARIABLES
+    static boolean minerHasBuiltDefensiveDS         = false;
+    static boolean minerHasBuiltAuxiliaryRefinery   = false;
+    static boolean minerHasBuiltDroneCenter         = false;
+
+    // DESIGN SCHOOL VARIABLES
     static int landscapersBuilt = 0;
     static int offensiveLandscapersBuilt = 0;
+    static boolean refineriesExist = false;
+
+    // LANDSCAPER VARIABLES
     static boolean wallBuilt = false;
     static int roundsSinceWallBuilt = 0;
     static Direction wallDirection;
     static ArrayList<Direction> wallQueue;
+    static ArrayList<MapLocation> extraDefenseQueue;
+    static boolean extraDefensePlaced = false;
+    static Direction extraDefenseDigHere;
+    static Direction extraDefenseDepositA;
+    static Direction extraDefenseDepositB;
     static LandscaperState landscaperState = LandscaperState.UNASSIGNED;
 
-    // Some constants
-    final static int soupNeededToBuildDesignSchool = 215;
-    final static int soupNeededToBuildDroneCenter = 230;
-    final static int landscaperRound = 40;
+    // DRONE VARIABLES
+    static int dronesBuilt = 0;
+    static DroneUtil droneUtil;
+
+    // DECISION CONSTANTS
+    final static int soupNeededToBuildDesignSchool  = 365;
+    final static int soupNeededToBuildDroneCenter   = 380;
+    final static int landscaperRound                = 40;
 
     static int turnCount;
 
@@ -144,12 +146,19 @@ public strictfp class RobotPlayer {
         // Initialize utility class
         ut = new Utility(rc, mapHeight, mapWidth, localHQ);
 
+        // Calculate possible enemy HQ location
         currentlyScoutingEnemyAt = 0;
         possibleEnemyLocations = new MapLocation[3];
         possibleEnemyLocations[0] = new MapLocation(mapWidth - 1 - localHQ.x, localHQ.y);
         possibleEnemyLocations[1] = new MapLocation(mapWidth - 1 - localHQ.x, mapHeight - 1 -localHQ.y);
         possibleEnemyLocations[2] = new MapLocation(localHQ.x, mapHeight - 1 - localHQ.y);
 
+        // Initialize HQ variables
+        if (rc.getType() == RobotType.HQ) {
+            bestMinerSpawns = Utility.getBestMinerSpawns(rc.getLocation(), mapHeight, mapWidth);
+        }
+
+        // Initialize miner variables
         refineries = new ArrayList<>();
         soupSectors = new HashSet<>();
         lastSoupDeposit = new MapLocation(-1, -1);
@@ -162,12 +171,17 @@ public strictfp class RobotPlayer {
                 minerState = MinerState.OFFENSIVE;
             }  else if (rc.getRoundNum() > 2 && rc.getRoundNum() <= 30) {
                 minerState = MinerState.SCOUTING;
-            } else if (rc.getRoundNum() > landscaperRound && rc.getTeamSoup() > 140) {
+//            } else if (rc.getRoundNum() > landscaperRound && rc.getTeamSoup() > 140) {
+            } else if (rc.getRoundNum() > landscaperRound) {
                 // TODO: BUILD ORDER ERROR HERE: if offensive design school is built before this robot, it will never build defensive design school as team soup will be less than 140
                 minerState = MinerState.BUILDING;
             } else {
                 minerState = MinerState.UNASSIGNED;
             }
+        }
+
+        if (rc.getType() == RobotType.DELIVERY_DRONE) {
+            droneUtil = new DroneUtil(rc, localHQ);
         }
 
         if (rc.getType() == RobotType.DESIGN_SCHOOL || rc.getType() == RobotType.LANDSCAPER) {
@@ -255,7 +269,7 @@ public strictfp class RobotPlayer {
         // Build and assign miners
         // TODO: Assign miner to scout enemy HQ, build offensive design school
         // TODO: Assign miner to build refinery + defensive design school near HQ
-        for (Direction dir : Utility.getDirections()) {
+        for (Direction dir : bestMinerSpawns) {
             if (minerCount < 4 && ut.tryBuild(RobotType.MINER, dir)) {
                 minerCount++;
                 break;
@@ -264,7 +278,7 @@ public strictfp class RobotPlayer {
 
         // Build auxiliary miner to build design school and scout enemy HQ
         if (!hasBuiltDefensiveDesignSchool && rc.getTeamSoup() >= soupNeededToBuildDesignSchool) {
-            for (Direction dir : Utility.getDirections()) {
+            for (Direction dir : bestMinerSpawns) {
                 if (ut.tryBuild(RobotType.MINER, dir)) {
                     hasBuiltDefensiveDesignSchool = true;
                     break;
@@ -300,6 +314,11 @@ public strictfp class RobotPlayer {
             if (newRbRefineries.size() > 0) {
                 refineries.clear();
                 refineries.addAll(newRbRefineries);
+                // If HQ is no longer the only refinery, stop miners from going anywhere near it
+                // TODO: check this out
+//                if (HQLockout == 0 && !refineries.contains(localHQ)) {
+//                    HQLockout = 8;
+//                }
             }
             if (!Pathfinding.locIsNull(tryEnemyHQ)) {
                 enemyHQ = tryEnemyHQ;
@@ -375,6 +394,14 @@ public strictfp class RobotPlayer {
             }
         }
 
+        if (!refineriesExist) {
+            Transaction[] currentBlock = rc.getBlock(rc.getRoundNum() - 1);
+            ArrayList<MapLocation> newRefineries = communication.checkNewRefineries(currentBlock);
+            if (newRefineries.size() > 0) {
+                refineriesExist = true;
+            }
+        }
+
         // Check if offense design school
         System.out.println("DESIGN SCHOOL: offensive landscapers built: " + offensiveLandscapersBuilt);
         System.out.println("ENEMY HQ: " + enemyHQ);
@@ -406,10 +433,12 @@ public strictfp class RobotPlayer {
         }
 
         // Generate landscaper in random direction if able
-        for (Direction dir : wallQueue) {
-            if (rc.getRoundNum() > landscaperRound && landscapersBuilt < 9) {
-                if (ut.tryBuild(RobotType.LANDSCAPER, dir)) {
-                    landscapersBuilt++;
+        if (refineriesExist) {
+            for (Direction dir : wallQueue) {
+                if (rc.getRoundNum() > landscaperRound && landscapersBuilt < 16) {
+                    if (ut.tryBuild(RobotType.LANDSCAPER, dir)) {
+                        landscapersBuilt++;
+                    }
                 }
             }
         }
@@ -418,7 +447,8 @@ public strictfp class RobotPlayer {
     static void runFulfillmentCenter() throws GameActionException {
         // Generate drone in random direction if able
         for (Direction dir : Utility.getDirections()) {
-            if (ut.tryBuild(RobotType.DELIVERY_DRONE, dir)) {
+            if (ut.tryBuild(RobotType.DELIVERY_DRONE, dir) && dronesBuilt < 4) {
+                dronesBuilt++;
                 break;
             }
         }
@@ -437,6 +467,7 @@ public strictfp class RobotPlayer {
             case UNASSIGNED:    assignLandscaper();     break;
             case OFFENSE:       runOffenseLandscaper(); break;
             case DEFENSE:       runDefenseLandscaper(); break;
+            case EXTRA_DEFENSE: runExtraDefenseLandscaper(); break;
         }
     }
 
@@ -451,6 +482,7 @@ public strictfp class RobotPlayer {
                 rc.pickUpUnit(robots[0].getID());
                 System.out.println("I picked up " + robots[0].getID() + "!");
             }
+            droneUtil.travelTo(localHQ, "linear");
         } else {
             for (Direction dir : Utility.getDirections()) {
                 if (rc.senseFlooding(rc.adjacentLocation(dir))) {
@@ -459,8 +491,9 @@ public strictfp class RobotPlayer {
                     }
                 }
             }
+            droneUtil.travelTo(localHQ, "linear");
         }
-        ut.tryMove(ut.randomDirection());
+//        ut.tryMove(ut.randomDirection());
         //////////////////////////////////////////////////////////////////////////////////////////////
     }
 
@@ -475,9 +508,9 @@ public strictfp class RobotPlayer {
         }
     }
 
-    //////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // MINER FUNCTIONS
-    //////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     static void scoutRandom() throws GameActionException {
         if (minerState == MinerState.RANDOM) {
@@ -507,7 +540,7 @@ public strictfp class RobotPlayer {
         }
 
         if (rc.isReady()) {
-            if (!pathfinding.travelTo(travelQueue.peekFirst())) {
+            if (!pathfinding.travelTo(travelQueue.peekFirst(), HQLockout)) {
                 travelQueue.clear();
                 pathfinding.reset();
                 minerState = MinerState.RANDOM;
@@ -601,7 +634,7 @@ public strictfp class RobotPlayer {
                 } else {
                     if (rc.isReady()) {
                         // Add error checking in case it can't reach target
-                        pathfinding.travelTo(travelQueue.peekFirst());
+                        pathfinding.travelTo(travelQueue.peekFirst(), HQLockout);
                     }
                 }
             }
@@ -636,7 +669,7 @@ public strictfp class RobotPlayer {
                     }
                 } else {
                     if (rc.isReady()) {
-                        if (!pathfinding.travelTo(travelQueue.peekFirst())) {
+                        if (!pathfinding.travelTo(travelQueue.peekFirst(), HQLockout)) {
                             travelQueue.clear();
                             pathfinding.reset();
                             System.out.println("Can't reach refinery...");
@@ -646,6 +679,7 @@ public strictfp class RobotPlayer {
                     }
                 }
             }
+            System.out.println("Done with refining subroutine!");
         }
     }
 
@@ -688,7 +722,7 @@ public strictfp class RobotPlayer {
     // Build defensive design school
     static void goBuildDefensiveDS() throws GameActionException {
         for (Direction dir : Utility.getDirections()) {
-            if (!rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, 2)
+            if (!rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, 5)
                     && rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, 50)) {
                 if (ut.tryBuild(RobotType.DESIGN_SCHOOL, dir)) {
                     minerHasBuiltDefensiveDS = true;
@@ -702,7 +736,7 @@ public strictfp class RobotPlayer {
     static void goBuildAuxiliaryRefinery() throws GameActionException {
         System.out.println("Trying to build extra refinery!");
         for (Direction dir : Utility.getDirections()) {
-            if (!rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, 25)) {
+            if (!rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, 20)) {
                 if (ut.tryBuild(RobotType.REFINERY, dir)) {
                     minerHasBuiltAuxiliaryRefinery = true;
                     communication.announceNewRefinery(rc.adjacentLocation(dir));
@@ -731,7 +765,7 @@ public strictfp class RobotPlayer {
 
     static void goOffensiveMiner() throws GameActionException {
         if (Pathfinding.locIsNull(enemyHQ)) {
-            pathfinding.travelTo(possibleEnemyLocations[currentlyScoutingEnemyAt]);
+            pathfinding.travelTo(possibleEnemyLocations[currentlyScoutingEnemyAt], HQLockout);
             RobotInfo[] nearby = rc.senseNearbyRobots();
             for (RobotInfo r : nearby) {
                 if (r.type == RobotType.HQ && r.team !=rc.getTeam()) {
@@ -763,14 +797,14 @@ public strictfp class RobotPlayer {
                     }
                 }
             } else {
-                pathfinding.travelTo(enemyHQ);
+                pathfinding.travelTo(enemyHQ, HQLockout);
             }
         }
     }
 
-    //////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     // LANDSCAPER FUNCTIONS
-    //////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     static void assignLandscaper() throws GameActionException {
         if (rc.getCooldownTurns() < 2) {
@@ -778,7 +812,11 @@ public strictfp class RobotPlayer {
             if (!Pathfinding.locIsNull(enemyHQ) && rc.getLocation().isWithinDistanceSquared(enemyHQ, 18)) {
                 landscaperState = LandscaperState.OFFENSE;
             } else {
-                landscaperState = LandscaperState.DEFENSE;
+                if (isWallBuilt() && rc.getLocation().distanceSquaredTo(localHQ) > 2) {
+                    landscaperState = LandscaperState.EXTRA_DEFENSE;
+                } else {
+                    landscaperState = LandscaperState.DEFENSE;
+                }
             }
         }
     }
@@ -847,14 +885,14 @@ public strictfp class RobotPlayer {
                 Direction digHere = Direction.CENTER;
                 while (rc.canDepositDirt(enemyHQDir)) {
 //                  TODO: COMMENT FOLLOWING LINE ONLY IN DEVELOPMENT!
-//                    rc.depositDirt(enemyHQDir);
+                    rc.depositDirt(enemyHQDir);
                 }
                 while (rc.canDigDirt(digHere)) {
                     rc.digDirt(digHere);
                 }
             } else {
                 System.out.println("TRAVELING TO ENEMY HQ AT: " + enemyHQ);
-                pathfinding.travelTo(enemyHQ);
+                pathfinding.travelTo(enemyHQ, 0);
             }
         }
     }
@@ -862,22 +900,6 @@ public strictfp class RobotPlayer {
     static void runDefenseLandscaper() throws GameActionException {
         // if part of the wall, build the wall
         if (wallDirection != null) {
-            if (!rc.onTheMap(new MapLocation(rc.getLocation().x + wallDirection.dx, rc.getLocation().y + wallDirection.dy))) {
-                Direction[] queue = new Direction[4];
-                queue[0] = wallDirection.rotateLeft();
-                queue[1] = wallDirection.rotateRight();
-                queue[2] = queue[0].rotateLeft();
-                queue[3] = queue[1].rotateRight();
-
-                for (Direction elem : queue) {
-                    MapLocation option = new MapLocation(rc.getLocation().x + elem.dx, rc.getLocation().y + elem.dy);
-                    if (rc.onTheMap(option) && rc.senseElevation(option) > 0) {
-                        wallDirection = elem;
-                        break;
-                    }
-                }
-            }
-
             if (!wallBuilt && isWallBuilt()) {
                 wallBuilt = true;
             }
@@ -953,21 +975,39 @@ public strictfp class RobotPlayer {
                 }
             }
 
-            RobotInfo otherBot = rc.senseRobotAtLocation(new MapLocation(rc.getLocation().x + wallDirection.dx, rc.getLocation().y + wallDirection.dy));
-
+            RobotInfo otherBot;
             if (rc.isReady() && rc.getDirtCarrying() < 25) {
-                if (rc.canDigDirt(wallDirection)
-                        && !(otherBot != null && otherBot.team == rc.getTeam() && otherBot.getType() == RobotType.DESIGN_SCHOOL)) {
-                    rc.digDirt(wallDirection);
-                } else if (rc.canDigDirt(wallDirection.rotateLeft())) {
-                    RobotInfo temp = rc.senseRobotAtLocation(rc.adjacentLocation(wallDirection.rotateLeft()));
-                    if (!(temp != null && temp.team == rc.getTeam() && temp.getType() == RobotType.DESIGN_SCHOOL)) {
-                        rc.digDirt(wallDirection.rotateLeft());
+                if (wallDirection == Direction.NORTHWEST
+                        || wallDirection == Direction.NORTHEAST
+                        || wallDirection == Direction.SOUTHWEST
+                        || wallDirection == Direction.SOUTHEAST) {
+                    Direction cardinalWallDirectionL = Utility.rotateXTimesLeft(wallDirection, 2);
+                    Direction cardinalWallDirectionR = Utility.rotateXTimesRight(wallDirection, 2);
+
+                    if (rc.onTheMap(rc.adjacentLocation(cardinalWallDirectionL))) {
+                        otherBot = rc.senseRobotAtLocation(new MapLocation(
+                                rc.getLocation().x + cardinalWallDirectionL.dx,
+                                rc.getLocation().y + cardinalWallDirectionL.dy));
+                        if (rc.canDigDirt(cardinalWallDirectionL) &&
+                                (otherBot == null || otherBot.team == rc.getTeam() || otherBot.getType() == RobotType.LANDSCAPER)) {
+                            rc.digDirt(cardinalWallDirectionL);
+                        }
                     }
-                } else if (rc.canDigDirt(wallDirection.rotateRight())) {
-                    RobotInfo temp = rc.senseRobotAtLocation(rc.adjacentLocation(wallDirection.rotateRight()));
-                    if (!(temp != null && temp.team == rc.getTeam() && temp.getType() == RobotType.DESIGN_SCHOOL)) {
-                        rc.digDirt(wallDirection.rotateRight());
+
+                    if (rc.onTheMap(rc.adjacentLocation(cardinalWallDirectionR))) {
+                        otherBot = rc.senseRobotAtLocation(new MapLocation(
+                                rc.getLocation().x + cardinalWallDirectionR.dx,
+                                rc.getLocation().y + cardinalWallDirectionR.dy));
+                        if (rc.canDigDirt(cardinalWallDirectionR) &&
+                                (otherBot == null || otherBot.team == rc.getTeam() || otherBot.getType() == RobotType.LANDSCAPER)) {
+                            rc.digDirt(cardinalWallDirectionR);
+                        }
+                    }
+                } else {
+                    otherBot = rc.senseRobotAtLocation(new MapLocation(rc.getLocation().x + wallDirection.dx, rc.getLocation().y + wallDirection.dy));
+                    if (rc.canDigDirt(wallDirection) &&
+                            (otherBot == null || otherBot.team == rc.getTeam() || otherBot.getType() == RobotType.LANDSCAPER)) {
+                        rc.digDirt(wallDirection);
                     }
                 }
             }
@@ -983,7 +1023,179 @@ public strictfp class RobotPlayer {
             }
         } else {
             System.out.println("Trying to move to HQ!");
-            pathfinding.travelTo(localHQ);
+            pathfinding.travelTo(localHQ, 0);
+        }
+    }
+
+    static void runExtraDefenseLandscaper() throws GameActionException {
+        System.out.println("I'm an extra defense landscaper!");
+        if (extraDefenseQueue == null) {
+            extraDefenseQueue = new ArrayList<>();
+            // get initial and ending points
+            int initDX;
+            int initDY;
+            MapLocation DS = rc.getLocation();
+            RobotInfo[] nearby = rc.senseNearbyRobots(2, rc.getTeam());
+            for (RobotInfo ri : nearby) {
+                if (ri.getType() == RobotType.DESIGN_SCHOOL) {
+                    DS = ri.location;
+                }
+            }
+            Direction toHQ = DS.directionTo(localHQ);
+            if (toHQ.getDeltaX() < 0) {
+                initDX = -2;
+            } else {
+                initDX = 2;
+            }
+            if (toHQ.getDeltaY() <= 0) {
+                initDY = -2;
+            } else {
+                initDY = 2;
+            }
+
+            System.out.println("initDX is " + initDX);
+            System.out.println("InitDY is " + initDY);
+
+            // fill-forwards (closest to design school first), so no particular order
+            for (int dx = initDX; dx != -1.5*initDX; dx+=(-0.5*initDX)) {
+                for (int dy = initDY; dy != -1.5*initDY; dy+=(-0.5*initDY)) {
+                    System.out.println("Creating defense queue: attempt is: dx=" + dx + " and dy=" + dy);
+                    if ((Math.abs(dx) == 1 && Math.abs(dy) == 1)
+                            || (Math.abs(dx) == 2 && Math.abs(dy) == 2)
+                            || dx == 0 || dy == 0) {
+                        continue;
+                    }
+                    MapLocation temp = localHQ.translate(dx, dy);
+                    if (rc.onTheMap(temp)) {
+                        extraDefenseQueue.add(temp);
+                    }
+                }
+            }
+        }
+
+        System.out.println("Extra defense placed: " + extraDefensePlaced);
+        System.out.println("ExtraDefenseQueue: " + extraDefenseQueue);
+
+        if (!extraDefensePlaced && extraDefenseQueue != null) {
+            for (MapLocation loc : extraDefenseQueue) {
+                if (rc.getLocation().equals(loc)) {
+                    extraDefensePlaced = true;
+                    extraDefenseQueue.clear();
+                    break;
+                }
+            }
+            if (!extraDefensePlaced) {
+                for (MapLocation spot : extraDefenseQueue) {
+                    if (rc.canSenseLocation(spot)
+                            && rc.isLocationOccupied(spot)) {
+                        extraDefenseQueue.remove(spot);
+                    } else {
+                        break;
+                    }
+                }
+                if (!extraDefenseQueue.isEmpty()) {
+                    System.out.println("Extra defense: trying to travel to " + extraDefenseQueue.get(0));
+                    pathfinding.travelTo(extraDefenseQueue.get(0), 0);
+                    return;
+                }
+            }
+        }
+
+        if (extraDefensePlaced) {
+            if (extraDefenseDigHere == null) {
+                switch(localHQ.y - rc.getLocation().y) {
+                    case -2:
+                        extraDefenseDigHere = rc.getLocation().directionTo(localHQ.translate(0, 2));
+                        break;
+                    case -1:
+                    case 1:
+                        if (localHQ.x - rc.getLocation().x > 0) {
+                            extraDefenseDigHere = rc.getLocation().directionTo(localHQ.translate(-2, 0));
+                        } else {
+                            extraDefenseDigHere = rc.getLocation().directionTo(localHQ.translate(2, 0));
+                        }
+                        break;
+                    case 2:
+                        extraDefenseDigHere = rc.getLocation().directionTo(localHQ.translate(0, -2));
+                        break;
+                }
+                if (Math.abs(localHQ.y - rc.getLocation().y) == 2
+                        && Math.abs(localHQ.x - rc.getLocation().x) == 2) {
+                    extraDefenseDigHere = rc.getLocation().directionTo(localHQ).opposite();
+                }
+            }
+
+            if (extraDefenseDepositA == null) {
+                if (extraDefenseDigHere == Direction.SOUTHWEST
+                        || extraDefenseDigHere == Direction.SOUTHEAST
+                        || extraDefenseDigHere == Direction.NORTHWEST
+                        || extraDefenseDigHere == Direction.NORTHEAST) {
+                    extraDefenseDepositA = extraDefenseDigHere.opposite();
+                } else {
+                    if (localHQ.y - rc.getLocation().y == 2) {
+                        extraDefenseDepositA = Direction.NORTH;
+                        if (localHQ.x - rc.getLocation().x == 1) {
+                            extraDefenseDepositB = extraDefenseDepositA.rotateRight();
+                        } else {
+                            extraDefenseDepositB = extraDefenseDepositA.rotateLeft();
+                        }
+                    } else if (localHQ.y - rc.getLocation().y == -2) {
+                        extraDefenseDepositA = Direction.SOUTH;
+                        if (localHQ.x - rc.getLocation().x == 1) {
+                            extraDefenseDepositB = extraDefenseDepositA.rotateLeft();
+                        } else {
+                            extraDefenseDepositB = extraDefenseDepositA.rotateRight();
+                        }
+                    } else if (localHQ.x - rc.getLocation().x == 2) {
+                        extraDefenseDepositA = Direction.EAST;
+                        if (localHQ.y - rc.getLocation().y == 1) {
+                            extraDefenseDepositB = extraDefenseDepositA.rotateLeft();
+                        } else {
+                            extraDefenseDepositB = extraDefenseDepositA.rotateRight();
+                        }
+                    } else {
+                        extraDefenseDepositA = Direction.WEST;
+                        if (localHQ.y - rc.getLocation().y == 1) {
+                            extraDefenseDepositB = extraDefenseDepositA.rotateRight();
+                        } else {
+                            extraDefenseDepositB = extraDefenseDepositA.rotateLeft();
+                        }
+                    }
+                }
+            }
+
+            System.out.println("time to get to work!");
+
+            // check if self is going to flood, if so, deposit on self
+            if (rc.canDepositDirt(Direction.CENTER)) {
+                if (rc.senseElevation(rc.getLocation()) <= 10) {
+                    rc.depositDirt(Direction.CENTER);
+                } else if (rc.senseElevation(rc.getLocation()) <= 25 && rc.getRoundNum() > 1700) {
+                    rc.depositDirt(Direction.CENTER);
+                } else if (rc.senseElevation(rc.getLocation()) <= 50 && rc.getRoundNum() > 2150) {
+                    rc.depositDirt(Direction.CENTER);
+                }
+            }
+
+            // try locations A and B
+            if (extraDefenseDepositB == null) {
+                if (rc.canDepositDirt(extraDefenseDepositA)) {
+                    rc.depositDirt(extraDefenseDepositA);
+                }
+            } else {
+                if (rc.senseElevation(rc.adjacentLocation(extraDefenseDepositB)) + 10
+                        < rc.senseElevation(rc.adjacentLocation(extraDefenseDepositA))
+                        && rc.canDepositDirt(extraDefenseDepositB)) {
+                    rc.depositDirt(extraDefenseDepositB);
+                } else if (rc.canDepositDirt(extraDefenseDepositA)) {
+                    rc.depositDirt(extraDefenseDepositA);
+                }
+            }
+
+            // Dig dirt
+            if (rc.canDigDirt(extraDefenseDigHere)) {
+                rc.digDirt(extraDefenseDigHere);
+            }
         }
     }
 
@@ -1031,6 +1243,7 @@ public strictfp class RobotPlayer {
 
         for (Direction dir: wallQueue) {
             MapLocation temp = new MapLocation(localHQ.x + dir.dx, localHQ.y + dir.dy);
+            // TODO: fix the following line because if a cow comes near HQ, landscaper can't sense location
             if (!rc.canSenseLocation(temp) || !rc.isLocationOccupied(temp) || rc.getLocation().equals(temp)) {
                 empty = dir;
                 break;
@@ -1050,7 +1263,7 @@ public strictfp class RobotPlayer {
         }
 
         try {
-            pathfinding.travelTo(chosenLocation);
+            pathfinding.travelTo(chosenLocation, 0);
         } catch (GameActionException e) {}
 
         if (rc.getLocation().equals(chosenLocation)) {

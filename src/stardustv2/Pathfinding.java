@@ -96,7 +96,7 @@ public strictfp class Pathfinding {
         lastEightLocations.clear();
     }
 
-    public boolean travelTo(MapLocation dest) throws GameActionException {
+    public boolean travelTo(MapLocation dest, int avoidR2HQ) throws GameActionException {
         // Returns true if movement in progress
         // Returns false if journey complete or obstacle encountered
         if (!currentMLine.isEmpty()) {
@@ -181,7 +181,7 @@ public strictfp class Pathfinding {
             // Get next point on m-line and try moving to it
             MapLocation next = getNextPointOnMLine(rc.getLocation());
             Direction nextDir = rc.getLocation().directionTo(next);
-            if (rc.canMove(nextDir) && !rc.senseFlooding(next)) {
+            if (rc.canMove(nextDir) && !rc.senseFlooding(next) && (avoidR2HQ == 0 || !next.isWithinDistanceSquared(localHQ, avoidR2HQ))) {
                 locationHistory.add(rc.getLocation());
                 locationPushBack(rc.getLocation());
                 rc.move(nextDir);
@@ -193,10 +193,12 @@ public strictfp class Pathfinding {
                 obstacleEncounteredAt = rc.getLocation();
                 int initialDir;
                 if (rc.canMove(nextDir.rotateLeft())
-                        && !rc.senseFlooding(rc.adjacentLocation(nextDir.rotateLeft()))) {
+                        && !rc.senseFlooding(rc.adjacentLocation(nextDir.rotateLeft()))
+                        && (avoidR2HQ == 0 || !rc.adjacentLocation(nextDir.rotateLeft()).isWithinDistanceSquared(localHQ, avoidR2HQ))) {
                     initialDir = 0;
                 } else if (rc.canMove(nextDir.rotateRight())
-                        && !rc.senseFlooding(rc.adjacentLocation(nextDir.rotateRight()))) {
+                        && !rc.senseFlooding(rc.adjacentLocation(nextDir.rotateRight()))
+                        && (avoidR2HQ == 0 || !rc.adjacentLocation(nextDir.rotateRight()).isWithinDistanceSquared(localHQ, avoidR2HQ))) {
                     initialDir = 1;
                 } else {
                     initialDir = rand.nextInt(2);
@@ -205,11 +207,11 @@ public strictfp class Pathfinding {
                 if (initialDir == 0) {
                     System.out.println(">>>>> Starting to follow obstacle left!");
                     obstacleDir = ObstacleDir.LEFT;
-                    return followObstacleLeft(true);
+                    return followObstacleLeft(true, avoidR2HQ);
                 } else {
                     System.out.println(">>>>> Starting to follow obstacle right!");
                     obstacleDir = ObstacleDir.RIGHT;
-                    return followObstacleRight(true);
+                    return followObstacleRight(true, avoidR2HQ);
                 }
 
             }
@@ -217,10 +219,10 @@ public strictfp class Pathfinding {
             // Still following obstacle
             if (obstacleDir == ObstacleDir.LEFT) {
                 System.out.println(">>>>> STILL following obstacle left!");
-                return followObstacleLeft(false);
+                return followObstacleLeft(false, avoidR2HQ);
             } else if (obstacleDir == ObstacleDir.RIGHT) {
                 System.out.println(">>>>> STILL following obstacle right!");
-                return followObstacleRight(false);
+                return followObstacleRight(false, avoidR2HQ);
             }
         }
         return false;
@@ -287,7 +289,7 @@ public strictfp class Pathfinding {
         return locationHistory.contains(loc);
     }
 
-    private boolean followObstacleLeft(boolean firstTime) throws GameActionException {
+    private boolean followObstacleLeft(boolean firstTime, int avoidR2HQ) throws GameActionException {
         if (currentDirection == null) {
             return false;
         }
@@ -310,7 +312,8 @@ public strictfp class Pathfinding {
             if (rc.canMove(dir)
                     && !rc.senseFlooding(rc.adjacentLocation(dir))
                     && locationOnMLine(rc.adjacentLocation(dir))
-                    && !locationAlreadyVisited(rc.adjacentLocation(dir))) {
+                    && !locationAlreadyVisited(rc.adjacentLocation(dir))
+                    && (avoidR2HQ == 0 || !rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, avoidR2HQ))) {
                 locationPushBack(rc.getLocation());
                 rc.move(dir);
                 currentDirection = dir;
@@ -319,7 +322,8 @@ public strictfp class Pathfinding {
         }
 
         for (Direction dir : moveQueue) {
-            if (rc.canMove(dir) && !rc.senseFlooding(rc.adjacentLocation(dir))) {
+            if (rc.canMove(dir) && !rc.senseFlooding(rc.adjacentLocation(dir))
+                    && (avoidR2HQ == 0 || !rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, avoidR2HQ))) {
                 locationPushBack(rc.getLocation());
                 rc.move(dir);
                 currentDirection = dir;
@@ -332,7 +336,7 @@ public strictfp class Pathfinding {
         return false;
     }
 
-    private boolean followObstacleRight(boolean firstTime) throws GameActionException {
+    private boolean followObstacleRight(boolean firstTime, int avoidR2HQ) throws GameActionException {
         if (currentDirection == null) {
             return false;
         }
@@ -355,7 +359,8 @@ public strictfp class Pathfinding {
             if (rc.canMove(dir)
                     && !rc.senseFlooding(rc.adjacentLocation(dir))
                     && locationOnMLine(rc.adjacentLocation(dir))
-                    && !locationAlreadyVisited(rc.adjacentLocation(dir))) {
+                    && !locationAlreadyVisited(rc.adjacentLocation(dir))
+                    && (avoidR2HQ == 0 || !rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, avoidR2HQ))) {
                 locationPushBack(rc.getLocation());
                 rc.move(dir);
                 currentDirection = dir;
@@ -364,7 +369,8 @@ public strictfp class Pathfinding {
         }
 
         for (Direction dir: moveQueue) {
-            if (rc.canMove(dir) && !rc.senseFlooding(rc.adjacentLocation(dir))) {
+            if (rc.canMove(dir) && !rc.senseFlooding(rc.adjacentLocation(dir))
+                    && (avoidR2HQ == 0 || !rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, avoidR2HQ))) {
                 locationPushBack(rc.getLocation());
                 rc.move(dir);
                 currentDirection = dir;

@@ -30,6 +30,37 @@ public strictfp class Utility {
         return directions;
     }
 
+
+
+    static public Direction[] getBestMinerSpawns(MapLocation localHQ, int mapHeight, int mapWidth) {
+        Direction[] result = new Direction[8];
+        Direction dirToMidpoint = localHQ.directionTo(getMidpoint(mapHeight, mapWidth));
+        if (dirToMidpoint == Direction.NORTH
+                || dirToMidpoint == Direction.SOUTH
+                || dirToMidpoint == Direction.EAST
+                || dirToMidpoint == Direction.WEST) {
+            result[0] = rotateXTimesLeft(dirToMidpoint, 1);
+            result[1] = rotateXTimesRight(dirToMidpoint, 1);
+            result[2] = dirToMidpoint;
+            result[3] = rotateXTimesLeft(dirToMidpoint, 2);
+            result[4] = rotateXTimesRight(dirToMidpoint, 2);
+        } else {
+            result[0] = dirToMidpoint;
+            result[1] = rotateXTimesLeft(dirToMidpoint, 2);
+            result[2] = rotateXTimesRight(dirToMidpoint, 2);
+            result[3] = rotateXTimesLeft(dirToMidpoint, 1);
+            result[4] = rotateXTimesRight(dirToMidpoint, 1);
+        }
+        result[5] = rotateXTimesLeft(dirToMidpoint, 3);
+        result[6] = rotateXTimesRight(dirToMidpoint, 3);
+        result[7] = dirToMidpoint.opposite();
+        return result;
+    }
+
+    static public MapLocation getMidpoint(int mapHeight, int mapWidth) {
+        return new MapLocation((mapWidth-1)/2, (mapHeight-1)/2);
+    }
+
     public Direction randomDirection() throws GameActionException {
         Direction temp = directions[(int) (Math.random() * directions.length)];
         int maxTries = 8;
@@ -69,7 +100,7 @@ public strictfp class Utility {
     }
 
     public boolean dirtDifferenceAboveX(MapLocation a, MapLocation b) throws GameActionException {
-        if (!rc.canSenseLocation(a) || !rc.canSenseLocation(b)) return true;
+        if (!rc.canSenseLocation(a) || !rc.canSenseLocation(b)) return true; // should it return false if it can't detect?
         int a_elev = rc.senseElevation(a);
         int b_elev = rc.senseElevation(b);
         // "X" is currently set to max permissible elevation difference of 6, can be changed if needed

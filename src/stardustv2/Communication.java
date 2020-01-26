@@ -14,11 +14,13 @@ public strictfp class Communication {
     final static int CODE_SOUP_EMPTY        = 202;
     final static int CODE_ENEMY_HQ_LOCATED  = 220;
     final static int CODE_REFINERY_BUILT    = 230;
+    final static int CODE_FIRST_WALL_BUILT  = 240;
 
     final static int SOUP_BROADCAST_COST        = 1;
     final static int EMPTY_SOUP_BROADCAST_COST  = 1;
     final static int ENEMY_HQ_LOCATED_COST      = 2;
     final static int ANNOUNCE_REFINERY_COST     = 2;
+    final static int ANNOUNCE_FIRST_WALL_COST   = 1;
 
     final static int REBROADCAST_OFFSET = 5;
     final static int REBROADCAST_COST = 1;
