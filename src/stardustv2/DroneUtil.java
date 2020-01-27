@@ -36,6 +36,7 @@ public strictfp class DroneUtil {
     static ObstacleDir obstacleDir;
     static Direction currentDirection;
     static Set<MapLocation> locationHistory;
+    static Communication communication;
 
     public DroneUtil(RobotController rc, MapLocation localHQ) {
         DroneUtil.rc = rc;
@@ -49,6 +50,7 @@ public strictfp class DroneUtil {
         obstacleDir = ObstacleDir.UNASSIGNED;
         currentDirection = Direction.CENTER;
         locationHistory = new HashSet<>();
+        communication = new Communication(rc);
     }
 
     public void reset() throws GameActionException {
@@ -115,7 +117,7 @@ public strictfp class DroneUtil {
       
         int travelToCode = 0;
         
-        travelToCode = travelTo(dest, "linear");
+        travelToCode = travelTo(dest, "linear", false, true);
 
         outputCode += travelToCode;
 
@@ -161,8 +163,8 @@ public strictfp class DroneUtil {
 
         RobotInfo[] visibleRobots = rc.senseNearbyRobots();
 
-        ArrayList<MapLocation> netguns = new ArrayList<MapLocation>;
-
+        ArrayList<MapLocation> netguns = new ArrayList<MapLocation>();
+        MapLocation closestGun = null;
         
 
         if (enemyHQ == null)
@@ -171,13 +173,18 @@ public strictfp class DroneUtil {
         boolean inNetgunRange = isInNetgunRange(loc, visibleRobots);
         
         for(RobotInfo n : visibleRobots) {
-          if (n.getTeam() != rc.getTeam() && n.getType() == RobotType.NET_GUN)
+          if (n.getTeam() != rc.getTeam() && n.getType() == RobotType.NET_GUN){
             netguns.add(n.getLocation());
-        } // A bit redundant but ok
+            if (closestGun == null || loc.distanceSquaredTo(n.getLocation()) < loc.distanceSquaredTo(closestGun))
+              closestGun = n.getLocation();
+          }
+        } 
+        if (enemyHQ != null && loc.distanceSquaredTo(enemyHQ) < loc.distanceSquaredTo(closestGun))
+          closestGun = enemyHQ;
 
         if (
           rc.canMove(nextDir) 
-          && (!loc.add(nextDir).isWithinDistanceSquared(localHQ, 8) || overrideHQ)
+          && (!loc.add(nextDir).isWithinDistanceSquared(localHQ, 13) || overrideHQ)
           && (!isInNetgunRange(loc.add(nextDir), visibleRobots) || overrideNets) 
           && (!inNetgunRange || overrideNets)
           ) { // Drone can move normally
@@ -185,66 +192,81 @@ public strictfp class DroneUtil {
             rc.move(nextDir);
             currentDirection = nextDir;
             return 1;
-
-        } else if (
-          (!loc.isWithinDistanceSquared(localHQ, 8) || overrideHQ)
-          && (!inNetgunRange || overrideNets)
-        ) { // leave netgun or hq range
-
-        } else if (
-          (!loc.add(nextDir).isWithinDistanceSquared(localHQ, 8) || overrideHQ)
-          && (!inNetgunRange || overrideNets)
-         ) { // Obstacle (or net range/HQ) at next point, so try closest spin around but not in HQ range
+          
+        } else
+          
+          { // Obstacle (or net range/HQ) at next point, so try closest spin around but not in HQ range
             
+            boolean moved = false;
+
+            Direction finalDir = nextDir;
+
             obstacleEncounteredAt = loc;
 
-            boolean moved = false;
+            if (inNetgunRange && !overrideNets && closestGun != null) {  // leave netgun range if in it
+              nextDir = loc.directionTo(closestGun).opposite();
+            }
+
+            else if (loc.isWithinDistanceSquared(localHQ, 13) && !overrideHQ) { // leave hq range if in it
+              nextDir = loc.directionTo(localHQ).opposite();
+            }
+            
+            if(rc.canMove(nextDir)) {
+              moved = true;
+              rc.move(nextDir);
+              System.out.println(">>>>> Avoiding netgun or HQ");
+              return 3;
+            }
+
+            
+            
             Direction dirCW = nextDir.rotateRight();
             Direction dirCCW = nextDir.rotateLeft();
             int variance = 1;
-            
-            Direction finalDir = nextDir;
+          
 
             // Priorize spin based on direction
             double slope = dy/dx;
 
-            // CW preferred (using XOR)
-            if((Math.abs(slope) < 1) ^ (slope < 0)) {
-              while (variance < 4 && !moved) {
-                if (rc.canMove(dirCW) && (!isInNetgunRange(loc.add(dirCW), visibleRobots) || overrideNets))  {
-                  System.out.println(">>>>> Avoiding obstacle CW x" + variance);
-                  finalDir = dirCW;
-                  moved = true;
-                } else if (rc.canMove(dirCCW) && (!isInNetgunRange(loc.add(dirCCW), visibleRobots) || overrideNets)) {
-                  System.out.println(">>>>> Avoiding obstacle CCW x" + variance);
-                  finalDir = dirCCW;
-                  moved = true;
-                } else {
-                  variance++;
-                  dirCW = dirCW.rotateRight();
-                  dirCCW = dirCCW.rotateRight();
+            if(!moved) {
+              // CW preferred (using XOR)
+              if((Math.abs(slope) < 1) ^ (slope < 0)) {
+                while (variance < 4 && !moved) {
+                  if (rc.canMove(dirCW) && (!isInNetgunRange(loc.add(dirCW), visibleRobots) || overrideNets))  {
+                    System.out.println(">>>>> Avoiding obstacle CW x" + variance);
+                    finalDir = dirCW;
+                    moved = true;
+                  } else if (rc.canMove(dirCCW) && (!isInNetgunRange(loc.add(dirCCW), visibleRobots) || overrideNets)) {
+                    System.out.println(">>>>> Avoiding obstacle CCW x" + variance);
+                    finalDir = dirCCW;
+                    moved = true;
+                  } else {
+                    variance++;
+                    dirCW = dirCW.rotateRight();
+                    dirCCW = dirCCW.rotateRight();
+                  }
                 }
-              }
-            } else { // CCW preferred
-              while (variance < 4 && !moved) {
-                if (rc.canMove(dirCCW)&& (!isInNetgunRange(loc.add(dirCCW), visibleRobots) || overrideNets) ) {
-                  System.out.println(">>>>> Avoiding obstacle CCW x" + variance);
-                  finalDir = dirCCW;
-                  moved = true;
-                } else if (rc.canMove(dirCW) && (!isInNetgunRange(loc.add(dirCW), visibleRobots) || overrideNets) ){
-                  System.out.println(">>>>> Avoiding obstacle CW x" + variance);
-                  finalDir = dirCW;
-                  moved = true;
-                }
-                else {
-                  variance++;
-                  dirCW = dirCW.rotateRight();
-                  dirCCW = dirCCW.rotateRight();
+              } else { // CCW preferred
+                while (variance < 4 && !moved) {
+                  if (rc.canMove(dirCCW)&& (!isInNetgunRange(loc.add(dirCCW), visibleRobots) || overrideNets) ) {
+                    System.out.println(">>>>> Avoiding obstacle CCW x" + variance);
+                    finalDir = dirCCW;
+                    moved = true;
+                  } else if (rc.canMove(dirCW) && (!isInNetgunRange(loc.add(dirCW), visibleRobots) || overrideNets) ){
+                    System.out.println(">>>>> Avoiding obstacle CW x" + variance);
+                    finalDir = dirCW;
+                    moved = true;
+                  }
+                  else {
+                    variance++;
+                    dirCW = dirCW.rotateRight();
+                    dirCCW = dirCCW.rotateRight();
+                  }
                 }
               }
             }
 
-            if (finalDir != nextDir) {
+            if (finalDir != nextDir && rc.canMove(finalDir)) {
               rc.move(finalDir);
             } else if (rc.canMove(dirCW.rotateRight()) && !loc.add(dirCW).isWithinDistanceSquared(localHQ, 8)) {
               System.out.println(">>>>> Cannot advance, retreating");
@@ -303,10 +325,11 @@ public strictfp class DroneUtil {
       return Direction.CENTER;
     }
 
-    public static boolean checkForEnemyHQ(RobotInfo[] visibleRobots){
+    public static boolean checkForEnemyHQ(RobotInfo[] visibleRobots) throws GameActionException {
       for(RobotInfo r : visibleRobots) {
         if(r.getType() == RobotType.HQ && r.getTeam() != rc.getTeam()) {
             enemyHQ = r.getLocation();
+            communication.announceEnemyHQ(enemyHQ);
             return true;
           }
         }
