@@ -268,7 +268,9 @@ public strictfp class DroneUtil {
           
 
             // Priorize spin based on direction
-            double slope = dy/dx;
+            double slope = dy*100;
+            if (dx != 0)
+              slope = dy/dx;
 
             if(!moved) {
               // CW preferred (using XOR)
