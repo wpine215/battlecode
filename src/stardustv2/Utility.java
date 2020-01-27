@@ -2,6 +2,9 @@ package stardustv2;
 
 import battlecode.common.*;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public strictfp class Utility {
     static RobotController rc;
     static int mapHeight;
@@ -19,6 +22,29 @@ public strictfp class Utility {
             Direction.NORTHWEST
     };
 
+    static Map<Integer, Integer> elevationToRoundFlooded = new HashMap<Integer, Integer>() {{
+        put(1, 256);
+        put(2, 464);
+        put(3, 677);
+        put(4, 931);
+        put(5, 1210);
+        put(6, 1413);
+        put(7, 1546);
+        put(8, 1640);
+        put(9, 1713);
+        put(10, 1771);
+        put(11, 1819);
+        put(12, 1861);
+        put(13, 1897);
+        put(14, 1929);
+        put(15, 1957);
+        put(16, 1983);
+        put(17, 2007);
+        put(18,2028);
+        put(19, 2048);
+        put(20, 2067);
+    }};
+
     public Utility(RobotController rc, int mapHeight, int mapWidth, MapLocation localHQ) {
         Utility.rc = rc;
         Utility.mapHeight = mapHeight;
@@ -29,8 +55,6 @@ public strictfp class Utility {
     static public Direction[] getDirections() {
         return directions;
     }
-
-
 
     static public Direction[] getBestMinerSpawns(MapLocation localHQ, int mapHeight, int mapWidth) {
         Direction[] result = new Direction[8];
@@ -79,7 +103,25 @@ public strictfp class Utility {
     }
 
     public boolean tryBuild(RobotType type, Direction dir) throws GameActionException {
-        if (rc.isReady() && rc.canBuildRobot(type, dir)) {
+        int costNeeded = 1;
+        switch(type) {
+            case MINER:
+                costNeeded += 75;
+                break;
+            case REFINERY:
+                costNeeded += 200;
+                break;
+            case NET_GUN:
+                costNeeded += 250;
+                break;
+            case VAPORATOR:
+                costNeeded += 500;
+                break;
+            default:
+                costNeeded += 150;
+                break;
+        }
+        if (rc.isReady() && rc.canBuildRobot(type, dir) && rc.getTeamSoup() >= costNeeded) {
             rc.buildRobot(type, dir);
             return true;
         } else return false;
@@ -160,5 +202,17 @@ public strictfp class Utility {
             return dir == Direction.NORTH;
         }
         return false;
+    }
+
+    public int HQEffectiveElevation() throws GameActionException {
+        int ringRadius;
+        int rad2 = rc.getCurrentSensorRadiusSquared();
+        if (rad2 >= 8) {
+            // can sense 2 rings away
+        } else {
+            // just check immediate
+        }
+        // TODO: finish this (not working)
+        return 0;
     }
 }

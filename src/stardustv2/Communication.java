@@ -15,12 +15,17 @@ public strictfp class Communication {
     final static int CODE_ENEMY_HQ_LOCATED  = 220;
     final static int CODE_REFINERY_BUILT    = 230;
     final static int CODE_FIRST_WALL_BUILT  = 240;
+    final static int CODE_DRONE_CENTER_BUILT = 250;
+    final static int CODE_DESIGN_SCHOOL_BUILT = 260;
+    final static int CODE_VAPORATOR_BUILT = 250;
+
 
     final static int SOUP_BROADCAST_COST        = 1;
     final static int EMPTY_SOUP_BROADCAST_COST  = 1;
     final static int ENEMY_HQ_LOCATED_COST      = 2;
-    final static int ANNOUNCE_REFINERY_COST     = 2;
+    final static int ANNOUNCE_REFINERY_COST     = 1;
     final static int ANNOUNCE_FIRST_WALL_COST   = 1;
+    final static int ANNOUNCE_BUILDING_COST = 1;
 
     final static int REBROADCAST_OFFSET = 5;
     final static int REBROADCAST_COST = 1;
@@ -81,7 +86,11 @@ public strictfp class Communication {
                                            Set<Integer> soupLocations,
                                            ArrayList<MapLocation> refineries,
                                            MapLocation enemyHQ,
-                                           int health) throws GameActionException {
+                                           int numRefineries,
+                                           int numDroneCenters,
+                                           int numDesignSchools,
+                                           int numVaporators,
+                                           boolean wallBuilt) throws GameActionException {
         // Only broadcast on rounds ending in 5
         if (rc.getRoundNum() % 10 != REBROADCAST_OFFSET) {
             return false;
@@ -174,6 +183,16 @@ public strictfp class Communication {
         }
 
         int sixthChunk = serializeLoc(enemyHQ);
+
+        // Pack seventh chunk
+        int seventhChunk = numVaporators;
+        seventhChunk += numDesignSchools * 100;
+        seventhChunk += numDroneCenters * 10000;
+        seventhChunk += numRefineries * 1000000;
+        if (wallBuilt) {
+            seventhChunk += 10000000;
+        }
+
         int firstChunk = (generateValidationInt(rc.getRoundNum()) * LOWER_CODE_BITS) + CODE_REBROADCAST;
 
         int[] rebroadcastMsg = new int[]{
@@ -183,7 +202,7 @@ public strictfp class Communication {
                 fourthChunk,
                 fifthChunk,
                 sixthChunk,
-                health
+                seventhChunk
         };
         return send(rebroadcastMsg, REBROADCAST_COST);
     }
@@ -252,6 +271,28 @@ public strictfp class Communication {
         return deserializeLoc(t.getMessage()[5]);
     }
 
+    public boolean getWallBuiltFromRebroadcast(Transaction t) throws GameActionException {
+        if ((t.getMessage()[6] / 10000000) == 1) {
+            return true;
+        } return false;
+    }
+
+    public int getNumRefineriesFromRebroadcast(Transaction t) throws GameActionException {
+        return (t.getMessage()[6] / 1000000) % 100;
+    }
+
+    public int getNumDroneCentersFromRebroadcast(Transaction t) throws GameActionException  {
+        return (t.getMessage()[6] / 10000) % 100;
+    }
+
+    public int getNumDesignSchoolsFromRebroadcast(Transaction t) throws GameActionException {
+        return (t.getMessage()[6] / 100) % 100;
+    }
+
+    public int getNumVaporatorsFromRebroadcast(Transaction t) throws GameActionException {
+        return t.getMessage()[6] % 100;
+    }
+
     //////////////////////////////////////////////////
     // MINER/SCOUTING UNIT BROADCAST FUNCTIONS
     //////////////////////////////////////////////////
@@ -286,12 +327,72 @@ public strictfp class Communication {
         send(enMsg, ENEMY_HQ_LOCATED_COST);
     }
 
+    public void announceNewDroneCenter(MapLocation loc) throws GameActionException {
+        int firstChunk = (generateValidationInt(rc.getRoundNum()) * LOWER_CODE_BITS) + CODE_DRONE_CENTER_BUILT;
+        int[] msg = new int[]{firstChunk, serializeLoc(loc), 0, 0, 0, 0, 0};
+        send(msg, ANNOUNCE_BUILDING_COST);
+    }
+
+    public void announceNewDesignSchool(MapLocation loc) throws GameActionException {
+        int firstChunk = (generateValidationInt(rc.getRoundNum()) * LOWER_CODE_BITS) + CODE_DESIGN_SCHOOL_BUILT;
+        int[] msg = new int[]{firstChunk, serializeLoc(loc), 0, 0, 0, 0, 0};
+        send(msg, ANNOUNCE_BUILDING_COST);
+    }
+
+    public void announceNewVaporator(MapLocation loc) throws GameActionException {
+        int firstChunk = (generateValidationInt(rc.getRoundNum()) * LOWER_CODE_BITS) + CODE_VAPORATOR_BUILT;
+        int[] msg = new int[]{firstChunk, serializeLoc(loc), 0, 0, 0, 0, 0};
+        send(msg, ANNOUNCE_BUILDING_COST);
+    }
+
     public ArrayList<MapLocation> checkNewRefineries(Transaction[] currentBlock) throws GameActionException {
         ArrayList<MapLocation> result = new ArrayList<>();
         for (Transaction t : currentBlock) {
             if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_REFINERY_BUILT) {
                 if (validate(t.getMessage()[0], rc.getRoundNum())) {
                     result.add(deserializeLoc(t.getMessage()[1]));
+                } else {
+                    System.out.println("TAMPERED MESSAGE DETECTED - IGNORING");
+                }
+            }
+        }
+        return result;
+    }
+
+    public int checkNewDroneCenters(Transaction[] currentBlock) throws GameActionException {
+        int result = 0;
+        for (Transaction t : currentBlock) {
+            if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_DRONE_CENTER_BUILT) {
+                if (validate(t.getMessage()[0], rc.getRoundNum())) {
+                    result++;
+                } else {
+                    System.out.println("TAMPERED MESSAGE DETECTED - IGNORING");
+                }
+            }
+        }
+        return result;
+    }
+
+    public int checkNewDesignSchools(Transaction[] currentBlock) throws GameActionException {
+        int result = 0;
+        for (Transaction t : currentBlock) {
+            if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_DESIGN_SCHOOL_BUILT) {
+                if (validate(t.getMessage()[0], rc.getRoundNum())) {
+                    result++;
+                } else {
+                    System.out.println("TAMPERED MESSAGE DETECTED - IGNORING");
+                }
+            }
+        }
+        return result;
+    }
+
+    public int checkNewVaporators(Transaction[] currentBlock) throws GameActionException {
+        int result = 0;
+        for (Transaction t : currentBlock) {
+            if (t.getMessage()[0] % LOWER_CODE_BITS == CODE_VAPORATOR_BUILT) {
+                if (validate(t.getMessage()[0], rc.getRoundNum())) {
+                    result++;
                 } else {
                     System.out.println("TAMPERED MESSAGE DETECTED - IGNORING");
                 }

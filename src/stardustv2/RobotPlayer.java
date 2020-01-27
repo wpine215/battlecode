@@ -1,5 +1,6 @@
 package stardustv2;
 import battlecode.common.*;
+import lectureplayer.Util;
 
 import java.util.*;
 
@@ -63,6 +64,11 @@ public strictfp class RobotPlayer {
     static boolean hasBuiltDefensiveDesignSchool = false;
     static boolean hasBuildOffensiveDesignSchool = false;
     static Direction[] bestMinerSpawns;
+
+    static int numDroneCenters = 0;
+    static int numDesignSchools = 0;
+    static int numRefineries = 0;
+    static int numVaporators = 0;
 
     // PATHFINDING VARIABLES
     static Pathfinding pathfinding;
@@ -167,9 +173,11 @@ public strictfp class RobotPlayer {
             System.out.println("I WAS BUILT IN ROUND " + rc.getRoundNum());
             refineries.add(localHQ);
             // Assign initial miner state
-            if (rc.getRoundNum() == 2) {
-                minerState = MinerState.OFFENSIVE;
-            }  else if (rc.getRoundNum() > 2 && rc.getRoundNum() <= 30) {
+            // Temporarily removing offensive rush miner
+//            if (rc.getRoundNum() == 2) {
+//                minerState = MinerState.OFFENSIVE;
+//            }  else if (rc.getRoundNum() > 2 && rc.getRoundNum() <= 30) {
+            if (rc.getRoundNum() >= 2 && rc.getRoundNum() <= 30) {
                 minerState = MinerState.SCOUTING;
 //            } else if (rc.getRoundNum() > landscaperRound && rc.getTeamSoup() > 140) {
             } else if (rc.getRoundNum() > landscaperRound) {
@@ -253,14 +261,35 @@ public strictfp class RobotPlayer {
             if (!Pathfinding.locIsNull(tryEnemyHQ)) {
                 enemyHQ = tryEnemyHQ;
             }
+
+            // Listen for new drone centers/design schools/vaporators
+            numDroneCenters += communication.checkNewDroneCenters(currentBlock);
+            numDesignSchools += communication.checkNewDesignSchools(currentBlock);
+            numVaporators += communication.checkNewVaporators(currentBlock);
+            numRefineries = refineries.size();
         }
 
         // Calculate own health
         HQHealth = 50 - rc.getDirtCarrying();
 
+        // Check if wall built
+        if (!wallBuilt) {
+            if (isWallBuilt()) {
+                wallBuilt = true;
+            }
+        }
+
         // Handle rebroadcast
         if (rc.getRoundNum() % 10 == 5) {
-            communication.trySendRebroadcastBlock(1, soupSectors, refineries, enemyHQ, HQHealth);
+            communication.trySendRebroadcastBlock(1,
+                    soupSectors,
+                    refineries,
+                    enemyHQ,
+                    numRefineries,
+                    numDroneCenters,
+                    numDesignSchools,
+                    numVaporators,
+                    wallBuilt);
         }
 
         // Handle netgun
@@ -312,7 +341,7 @@ public strictfp class RobotPlayer {
                 soupSectors.addAll(newRbSoupSectors);
             }
             if (newRbRefineries.size() > 0) {
-                refineries.clear();
+                refineries.remove(localHQ);
                 refineries.addAll(newRbRefineries);
                 // If HQ is no longer the only refinery, stop miners from going anywhere near it
                 // TODO: check this out
@@ -320,10 +349,21 @@ public strictfp class RobotPlayer {
 //                    HQLockout = 8;
 //                }
             }
+            numDroneCenters = communication.getNumDroneCentersFromRebroadcast(rb);
+            numDesignSchools = communication.getNumDesignSchoolsFromRebroadcast(rb);
+            numVaporators = communication.getNumVaporatorsFromRebroadcast(rb);
             if (!Pathfinding.locIsNull(tryEnemyHQ)) {
                 enemyHQ = tryEnemyHQ;
             }
         }
+
+        // Check new refineries from direct broadcast
+        ArrayList<MapLocation> newRefineries = communication.checkNewRefineries(currentBlock);
+        if (newRefineries.size() > 0) {
+            refineries.addAll(newRefineries);
+        }
+
+        numRefineries = refineries.size();
 
         // Assign a miner to get soup if there is some available
         if (minerState == MinerState.SCOUTING
@@ -347,6 +387,19 @@ public strictfp class RobotPlayer {
         System.out.println(">>> MINER STATE: " + minerState);
         System.out.println(">>> MINING STATE: " + miningState);
 
+        // Build fulfillment center if able to
+        if (numDroneCenters < BuildOrder.DRONECENTER_WAVES[0]) {
+            for (Direction dir : Utility.getDirections()) {
+                if (!rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, 13)) {
+                    if (ut.tryBuild(RobotType.FULFILLMENT_CENTER, dir)) {
+                        communication.announceNewDroneCenter(rc.adjacentLocation(dir));
+                        numDroneCenters++;
+                        break;
+                    }
+                }
+            }
+        }
+
         switch(minerState) {
             case UNASSIGNED:
                 break;
@@ -364,8 +417,8 @@ public strictfp class RobotPlayer {
                     goBuildDefensiveDS();
                 } else if (!minerHasBuiltAuxiliaryRefinery) {
                     goBuildAuxiliaryRefinery();
-                } else if (!minerHasBuiltDroneCenter) {
-                    goBuildDroneCenter();
+//                } else if (!minerHasBuiltDroneCenter) {
+//                    goBuildDroneCenter();
                 } else {
                     minerState = MinerState.SCOUTING;
                 }
@@ -396,8 +449,13 @@ public strictfp class RobotPlayer {
 
         if (!refineriesExist) {
             Transaction[] currentBlock = rc.getBlock(rc.getRoundNum() - 1);
+            Transaction lastRebroadcast = communication.getLastRebroadcast();
             ArrayList<MapLocation> newRefineries = communication.checkNewRefineries(currentBlock);
+            ArrayList<MapLocation> newRefineriesRB = communication.getRefineriesFromRebroadcast(lastRebroadcast);
             if (newRefineries.size() > 0) {
+                refineriesExist = true;
+            }
+            if (newRefineriesRB.size() > 0 && !newRefineriesRB.contains(localHQ)) {
                 refineriesExist = true;
             }
         }
@@ -445,9 +503,22 @@ public strictfp class RobotPlayer {
     }
 
     static void runFulfillmentCenter() throws GameActionException {
+        if (!wallBuilt) {
+            Transaction rb = communication.getLastRebroadcast();
+            wallBuilt = communication.getWallBuiltFromRebroadcast(rb);
+        }
+
         // Generate drone in random direction if able
         for (Direction dir : Utility.getDirections()) {
-            if (ut.tryBuild(RobotType.DELIVERY_DRONE, dir) && dronesBuilt < 4) {
+            if (rc.getRoundNum() > 30 && dronesBuilt < BuildOrder.DRONE_WAVES[0] && ut.tryBuild(RobotType.DELIVERY_DRONE, dir)) {
+                dronesBuilt++;
+                break;
+            }
+            if (rc.getRoundNum() > 100 && wallBuilt && dronesBuilt < BuildOrder.DRONE_WAVES[1] && ut.tryBuild(RobotType.DELIVERY_DRONE, dir)) {
+                dronesBuilt++;
+                break;
+            }
+            if (rc.getRoundNum() > 400 && wallBuilt && dronesBuilt < BuildOrder.DRONE_WAVES[2] && ut.tryBuild(RobotType.DELIVERY_DRONE, dir)) {
                 dronesBuilt++;
                 break;
             }
@@ -513,6 +584,7 @@ public strictfp class RobotPlayer {
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     static void scoutRandom() throws GameActionException {
+        staticDetectSoup();
         if (minerState == MinerState.RANDOM) {
             ut.tryMove(ut.randomDirection());
         }
@@ -627,7 +699,20 @@ public strictfp class RobotPlayer {
             }
             System.out.println("MINING ENROUTE TO: " + travelQueue.peekFirst());
             if (!travelQueue.isEmpty()) {
-                if (rc.getLocation().isWithinDistanceSquared(travelQueue.peekFirst(), 2)) {
+                boolean nearbySoup = false;
+                for (Direction dir : Utility.getDirections()) {
+                    if (rc.canSenseLocation(rc.adjacentLocation(dir))
+                            && rc.senseSoup(rc.adjacentLocation(dir)) > 0) {
+                        nearbySoup = true;
+                        if (!soupSectors.contains(Sector.getFromLocation(rc.adjacentLocation(dir)))) {
+                            soupSectors.add(Sector.getFromLocation(rc.adjacentLocation(dir)));
+                            communication.broadcastSoup(Sector.getFromLocation(rc.adjacentLocation(dir)));
+                        }
+                        break;
+                    }
+                }
+                if (rc.getLocation().isWithinDistanceSquared(travelQueue.peekFirst(), 2)
+                        || nearbySoup) {
                     travelQueue.clear();
                     pathfinding.reset();
                     miningState = MiningState.IN_PROGRESS;
@@ -684,6 +769,27 @@ public strictfp class RobotPlayer {
     }
 
     static void performMining() throws GameActionException {
+        boolean refineryNearMe = false;
+        for (MapLocation rLoc : refineries) {
+            if (rc.getLocation().distanceSquaredTo(rLoc) < 72) {
+                refineryNearMe = true;
+                break;
+            }
+        }
+
+        if (!refineryNearMe && refineries.size() < 3) {
+            for (Direction dir : Utility.getDirections()) {
+                if (rc.canBuildRobot(RobotType.REFINERY, dir)
+                        && rc.getTeamSoup() > 152
+                        && !rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, 8)) {
+                    rc.buildRobot(RobotType.REFINERY, dir);
+                    refineries.add(rc.adjacentLocation(dir));
+                    communication.announceNewRefinery(rc.adjacentLocation(dir));
+                    break;
+                }
+            }
+        }
+
         if (!ut.tryMine(Direction.CENTER)) {
             for (Direction dir : Utility.getDirections()) {
                 if (ut.tryMine(dir)) {
@@ -726,6 +832,7 @@ public strictfp class RobotPlayer {
                     && rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, 50)) {
                 if (ut.tryBuild(RobotType.DESIGN_SCHOOL, dir)) {
                     minerHasBuiltDefensiveDS = true;
+                    communication.announceNewDesignSchool(rc.adjacentLocation(dir));
                     break;
                 }
             }
@@ -736,7 +843,7 @@ public strictfp class RobotPlayer {
     static void goBuildAuxiliaryRefinery() throws GameActionException {
         System.out.println("Trying to build extra refinery!");
         for (Direction dir : Utility.getDirections()) {
-            if (!rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, 20)) {
+            if (!rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, 8)) {
                 if (ut.tryBuild(RobotType.REFINERY, dir)) {
                     minerHasBuiltAuxiliaryRefinery = true;
                     communication.announceNewRefinery(rc.adjacentLocation(dir));
@@ -754,6 +861,7 @@ public strictfp class RobotPlayer {
                 if (!rc.adjacentLocation(dir).isWithinDistanceSquared(localHQ, 25)) {
                     if (ut.tryBuild(RobotType.FULFILLMENT_CENTER, dir)) {
                         minerHasBuiltDroneCenter = true;
+                        communication.announceNewDroneCenter(rc.adjacentLocation(dir));
                         break;
                     }
                 }
@@ -790,6 +898,7 @@ public strictfp class RobotPlayer {
                     for (Direction dir : Utility.getDirections()) {
                         if (ut.tryBuild(RobotType.DESIGN_SCHOOL, dir)) {
                             hasBuildOffensiveDesignSchool = true;
+                            communication.announceNewDesignSchool(rc.adjacentLocation(dir));
                             pathfinding.reset();
                             minerState = MinerState.SCOUTING;
                             break;
@@ -809,15 +918,15 @@ public strictfp class RobotPlayer {
     static void assignLandscaper() throws GameActionException {
         if (rc.getCooldownTurns() < 2) {
             System.out.println("assignLandscaper: enemy HQ is " + enemyHQ);
-            if (!Pathfinding.locIsNull(enemyHQ) && rc.getLocation().isWithinDistanceSquared(enemyHQ, 18)) {
-                landscaperState = LandscaperState.OFFENSE;
+//            if (!Pathfinding.locIsNull(enemyHQ) && rc.getLocation().isWithinDistanceSquared(enemyHQ, 18)) {
+//                landscaperState = LandscaperState.OFFENSE;
+//            } else {
+            if (isWallBuilt() && rc.getLocation().distanceSquaredTo(localHQ) > 2) {
+                landscaperState = LandscaperState.EXTRA_DEFENSE;
             } else {
-                if (isWallBuilt() && rc.getLocation().distanceSquaredTo(localHQ) > 2) {
-                    landscaperState = LandscaperState.EXTRA_DEFENSE;
-                } else {
-                    landscaperState = LandscaperState.DEFENSE;
-                }
+                landscaperState = LandscaperState.DEFENSE;
             }
+//            }
         }
     }
 
@@ -832,6 +941,10 @@ public strictfp class RobotPlayer {
                 if (ri.getType() == RobotType.DESIGN_SCHOOL) {
                     DS = ri.location;
                 }
+            }
+
+            if (DS.equals(localHQ)) {
+                DS = rc.getLocation().add(rc.getLocation().directionTo(Utility.getMidpoint(mapHeight, mapWidth)));
             }
 
             Direction temp;
@@ -877,6 +990,7 @@ public strictfp class RobotPlayer {
         return empty == null;
     }
 
+    // Currently disabled/on hold for time being
     static void runOffenseLandscaper() throws GameActionException {
         if (enemyHQ != null) {
             if (rc.getLocation().isWithinDistanceSquared(enemyHQ, 2)) {
@@ -928,7 +1042,7 @@ public strictfp class RobotPlayer {
             boolean localDSDestroyed = true;
             RobotInfo[] nearbyRI = rc.senseNearbyRobots(rc.getCurrentSensorRadiusSquared(), rc.getTeam());
             for (RobotInfo ri : nearbyRI) {
-                if (ri.getType() == RobotType.DESIGN_SCHOOL) {
+                if (ri.getType() == RobotType.DESIGN_SCHOOL || rc.getCurrentSensorRadiusSquared() < 20) {
                     localDSDestroyed = false;
                     break;
                 }

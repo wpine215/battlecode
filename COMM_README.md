@@ -12,7 +12,7 @@
   - 4) Refinery Location #1 (upper 4 digits), Refinery Location #2 (lower 4 digits)
   - 5) Refinery Location #3 (upper 4 digits), Refinery Location #4 (lower 4 digits)
   - 6) Enemy HQ Coordinates (4 digits)
-  - 7) Home HQ Health (2 digits)
+  - 7) # of refineries (upper 2 digits), # of drone centers (upper middle 2 digits), # of design schools (uper lower 2 digits), # of vaporators (lower 2 digits)
 - Build Refinery
   - 1) Hashed round number (upper 7 digits), identifier (lower 3 digits (**120**))
   - 2) Coordinates to build refinery at (lower 4 digits)
@@ -43,6 +43,15 @@
 - Built Refinery
   - 1) Hashed round number (upper 7 digits), identifier (lower 3 digits (**230**))
   - 2) Coordinates of refinery (lower 4 digits)
+- Built Drone Center
+  - 1) Hashed round number (upper 7 digits), identifier (lower 3 digits (**250**))
+  - 2) Coordinates of drone center (lower 4 digits)
+- Built Design School
+  - 1) Hashed round number (upper 7 digits), identifier (lower 3 digits (**260**))
+  - 2) Coordinates of design school (lower 4 digits)
+- Built Vaporator
+  - 1) Hashed round number (upper 7 digits), identifier (lower 3 digits (**270**))
+  - 2) Coordinates of vaporator (lower 4 digits)
 
 ### Messages from Landscapers
 
