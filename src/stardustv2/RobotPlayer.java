@@ -119,7 +119,9 @@ public strictfp class RobotPlayer {
     static MapLocation globalClosestWater = new MapLocation(99, 99);
     static MapLocation lastOrigin = new MapLocation(99, 99);
     static Drone drone;
+    static DroneState droneState = DroneState.DEFENSE;
     static ArrayList<MapLocation> netgunLocations = new ArrayList<>();
+    static boolean isInFormation = false;
 
     // DECISION CONSTANTS
     final static int soupNeededToBuildDesignSchool  = 365;
@@ -548,57 +550,44 @@ public strictfp class RobotPlayer {
     }
 
     static void runDeliveryDrone() throws GameActionException {
-        if (Pathfinding.locIsNull(enemyHQ)) {
-            Transaction rb = communication.getLastRebroadcast();
-            if (!Pathfinding.locIsNull(communication.getEnemyHQFromRebroadcast(rb))) {
-                enemyHQ = communication.getEnemyHQFromRebroadcast(rb);
-                netgunLocations.add(enemyHQ);
-            }
+        if (rc.getRoundNum() > 250 && rc.getRoundNum() < 750) {
+            droneState = DroneState.OFFENSE;
+        } else if (rc.getRoundNum() >= 750) {
+            droneState = DroneState.BLOCKADE;
+        } else {
+            droneState = DroneState.DEFENSE;
         }
 
-        if (!Pathfinding.locIsNull(enemyHQ)
-                && !netgunLocations.contains(enemyHQ)) {
-            netgunLocations.add(enemyHQ);
+        switch(droneState) {
+            case OFFENSE:
+                runOffenseDrone();
+                break;
+            case DEFENSE:
+                runDefenseDrone();
+                break;
+            case BLOCKADE:
+                runBlockadeDrone();
+                break;
         }
+    }
 
+
+    static void runDefenseDrone() throws GameActionException {
         // Store water sectors here
+        isInFormation = false;
         Team enemy = rc.getTeam().opponent();
         if (!rc.isCurrentlyHoldingUnit()) {
             RobotInfo[] nearbyRobots = rc.senseNearbyRobots(GameConstants.DELIVERY_DRONE_PICKUP_RADIUS_SQUARED, enemy);
-                for (RobotInfo nr : nearbyRobots) {
-                    if (rc.canPickUpUnit(nr.getID())) {
-                        rc.pickUpUnit(nr.getID());
-                        break;
-                    }
+            for (RobotInfo nr : nearbyRobots) {
+                if (rc.canPickUpUnit(nr.getID())) {
+                    rc.pickUpUnit(nr.getID());
+                    break;
                 }
-
-            // do movement shit here
-            if (rc.getRoundNum() > 200 && rc.getRoundNum() < 700) {
-                if (Pathfinding.locIsNull(enemyHQ)) {
-                    drone.circleAround(possibleEnemyLocations[currentlyScoutingEnemyAt], 15, netgunLocations);
-                    RobotInfo[] nearby = rc.senseNearbyRobots(rc.getCurrentSensorRadiusSquared(), enemy);
-                    for (RobotInfo r : nearby) {
-                        if (r.getType() == RobotType.HQ) {
-                            enemyHQ = r.location;
-                            communication.announceEnemyHQ(r.location);
-                            System.out.println(">>>> FOUND ENEMY HQ AT" + enemyHQ);
-                        }
-                    }
-                    if (Pathfinding.locIsNull(enemyHQ) && rc.canSenseLocation(possibleEnemyLocations[currentlyScoutingEnemyAt])) {
-                        if (currentlyScoutingEnemyAt < 2) {
-                            currentlyScoutingEnemyAt++;
-                        } else {
-                            drone.circleAround(localHQ, 15, netgunLocations);
-                        }
-                    }
-                } else {
-                    drone.circleAround(enemyHQ, 15, netgunLocations);
-                }
-            } else {
-                drone.circleAround(localHQ, 15, netgunLocations);
             }
+
+            drone.circleAround(localHQ, 15, netgunLocations);
+
         } else {
-            // We're holding on to a unit, yeet it
             System.out.println("Holding on to enemy unit. preparing to yeet.");
             for (Direction d : Utility.getDirections()) {
                 if (rc.canSenseLocation(rc.adjacentLocation(d))) {
@@ -624,6 +613,114 @@ public strictfp class RobotPlayer {
                         lastOrigin = Utility.diagonalOpposite(rc.getLocation(), mapHeight, mapWidth);
                     }
                     drone.circleAround(lastOrigin, 0, netgunLocations);
+                }
+            }
+        }
+    }
+
+    static void runOffenseDrone() throws GameActionException {
+        isInFormation = false;
+        if (Pathfinding.locIsNull(enemyHQ)) {
+            Transaction rb = communication.getLastRebroadcast();
+            if (!Pathfinding.locIsNull(communication.getEnemyHQFromRebroadcast(rb))) {
+                enemyHQ = communication.getEnemyHQFromRebroadcast(rb);
+                netgunLocations.add(enemyHQ);
+            }
+        }
+
+        if (!Pathfinding.locIsNull(enemyHQ)
+                && !netgunLocations.contains(enemyHQ)) {
+            netgunLocations.add(enemyHQ);
+        }
+
+        // Store water sectors here
+        Team enemy = rc.getTeam().opponent();
+        if (!rc.isCurrentlyHoldingUnit()) {
+            RobotInfo[] nearbyRobots = rc.senseNearbyRobots(GameConstants.DELIVERY_DRONE_PICKUP_RADIUS_SQUARED, enemy);
+            for (RobotInfo nr : nearbyRobots) {
+                if (rc.canPickUpUnit(nr.getID())) {
+                    rc.pickUpUnit(nr.getID());
+                    break;
+                }
+            }
+
+            if (Pathfinding.locIsNull(enemyHQ)) {
+                drone.circleAround(possibleEnemyLocations[currentlyScoutingEnemyAt], 15, netgunLocations);
+                RobotInfo[] nearby = rc.senseNearbyRobots(rc.getCurrentSensorRadiusSquared(), enemy);
+                for (RobotInfo r : nearby) {
+                    if (r.getType() == RobotType.HQ) {
+                        enemyHQ = r.location;
+                        communication.announceEnemyHQ(r.location);
+                        System.out.println(">>>> FOUND ENEMY HQ AT" + enemyHQ);
+                    }
+                }
+                if (Pathfinding.locIsNull(enemyHQ) && rc.canSenseLocation(possibleEnemyLocations[currentlyScoutingEnemyAt])) {
+                    if (currentlyScoutingEnemyAt < 2) {
+                        currentlyScoutingEnemyAt++;
+                    } else {
+                        drone.circleAround(localHQ, 15, netgunLocations);
+                    }
+                }
+            } else {
+                drone.circleAround(enemyHQ, 15, netgunLocations);
+            }
+        } else {
+            System.out.println("Holding on to enemy unit. preparing to yeet.");
+            for (Direction d : Utility.getDirections()) {
+                if (rc.canSenseLocation(rc.adjacentLocation(d))) {
+                    if (rc.senseFlooding(rc.adjacentLocation(d))) {
+                        if (rc.canDropUnit(d)) {
+                            rc.dropUnit(d);
+                            globalClosestWater = new MapLocation(99, 99);
+                            lastOrigin = new MapLocation(99, 99);
+                            return;
+                        }
+                    }
+                }
+            }
+
+            if (!Pathfinding.locIsNull(globalClosestWater)) {
+                System.out.println("Moving to closest water at location " + globalClosestWater);
+                drone.circleAround(globalClosestWater, 0, netgunLocations);
+            } else {
+                globalClosestWater = getClosestWater();
+                if (Pathfinding.locIsNull(globalClosestWater)) {
+                    System.out.println("Moving to opposite part of map.");
+                    if (Pathfinding.locIsNull(lastOrigin)) {
+                        lastOrigin = Utility.diagonalOpposite(rc.getLocation(), mapHeight, mapWidth);
+                    }
+                    drone.circleAround(lastOrigin, 0, netgunLocations);
+                }
+            }
+        }
+    }
+
+    static void runBlockadeDrone() throws GameActionException {
+        // Store water sectors here
+        Team enemy = rc.getTeam().opponent();
+        if (!rc.isCurrentlyHoldingUnit()) {
+            RobotInfo[] nearbyRobots = rc.senseNearbyRobots(GameConstants.DELIVERY_DRONE_PICKUP_RADIUS_SQUARED, enemy);
+            for (RobotInfo nr : nearbyRobots) {
+                if (rc.canPickUpUnit(nr.getID())) {
+                    rc.pickUpUnit(nr.getID());
+                    break;
+                }
+            }
+
+            if (!isInFormation && drone.getInFormation(localHQ, 3, netgunLocations)) {
+                isInFormation = true;
+            }
+
+        } else {
+            System.out.println("Holding on to enemy unit. preparing to yeet.");
+            for (Direction d : Utility.getDirections()) {
+                if (rc.canSenseLocation(rc.adjacentLocation(d))) {
+                    if (rc.senseFlooding(rc.adjacentLocation(d))) {
+                        if (rc.canDropUnit(d)) {
+                            rc.dropUnit(d);
+                            return;
+                        }
+                    }
                 }
             }
         }

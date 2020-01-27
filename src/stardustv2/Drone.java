@@ -80,4 +80,25 @@ public strictfp class Drone {
         return false;
     }
 
+    public boolean getInFormation(MapLocation dest, int squareRadius, ArrayList<MapLocation> knownNetguns) throws GameActionException {
+        int lowerRadiusLimit;
+        int upperRadiusLimit;
+        switch(squareRadius) {
+            case 3:
+                lowerRadiusLimit = 8;
+                upperRadiusLimit = 18;
+                break;
+            default:
+                lowerRadiusLimit = 3;
+                upperRadiusLimit = 8;
+                break;
+        }
+        if (rc.getLocation().isWithinDistanceSquared(dest, upperRadiusLimit)
+                && !rc.getLocation().isWithinDistanceSquared(dest, lowerRadiusLimit)) {
+            return true;
+        }
+        circleAround(dest, lowerRadiusLimit, knownNetguns);
+        return false;
+    }
+
 }
