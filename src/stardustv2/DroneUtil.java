@@ -284,7 +284,7 @@ public strictfp class DroneUtil {
 
         if (
           rc.canMove(nextDir) 
-          && (!loc.add(nextDir).isWithinDistanceSquared(localHQ, 13) || overrideHQ)
+          && (!loc.add(nextDir).isWithinDistanceSquared(localHQ, 8) || overrideHQ) // THIS WAS ORIGINALLY 13
           && (!isInNetgunRange(loc.add(nextDir), visibleRobots) || overrideNets) 
           && (!inNetgunRange || overrideNets)
           ) { // Drone can move normally
@@ -307,7 +307,7 @@ public strictfp class DroneUtil {
               nextDir = loc.directionTo(closestGun).opposite();
             }
 
-            else if (loc.isWithinDistanceSquared(localHQ, 13) && overrideHQ == false) { // leave hq range if in it
+            else if (loc.isWithinDistanceSquared(localHQ, 8) && overrideHQ == false) { // leave hq range if in it // THIS WAS ORIGINALLY 13
               nextDir = loc.directionTo(localHQ).opposite();
               if(rc.canMove(nextDir)) {
                 moved = true;
@@ -370,7 +370,7 @@ public strictfp class DroneUtil {
 
             if (finalDir != nextDir && rc.canMove(finalDir)) {
               rc.move(finalDir);
-            } else if (rc.canMove(dirCW.rotateRight()) && !loc.add(dirCW).isWithinDistanceSquared(localHQ, 13)) {
+            } else if (rc.canMove(dirCW.rotateRight()) && !loc.add(dirCW).isWithinDistanceSquared(localHQ, 8)) { // THIS WAS ORIGINALLY 13
               System.out.println(">>>>> Cannot advance, retreating");
               rc.move(dirCW.rotateRight());
             } else {

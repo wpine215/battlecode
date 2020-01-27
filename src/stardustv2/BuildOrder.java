@@ -4,7 +4,7 @@ public strictfp class BuildOrder {
     final static int[] DRONECENTER_WAVES        = new int[]{1, 3};
     final static int[] DRONECENTER_PRIORITIES   = new int[]{0, 2};
 
-    final static int[] DRONE_WAVES              = new int[]{2, 4, 10};
+    final static int[] DRONE_WAVES              = new int[]{2, 4, 16};
     final static int[] DRONE_PRIORITIES         = new int[]{0, 1, 1};
 
     final static int[] DESIGN_WAVES             = new int[]{1, 2};

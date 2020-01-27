@@ -144,8 +144,9 @@ public strictfp class Pathfinding {
         if (rc.getLocation().equals(obstacleEncounteredAt) && !alreadyHitMapEdge) {
             System.out.println(">>>>> Encountered obstacle point again! Resetting...");
             reset();
-            resetRounds = 3;
-            return true; // used to be false btw
+//            resetRounds = 3;
+//            return true; // used to be false btw
+            return false;
         }
 
         // We encountered a map edge
