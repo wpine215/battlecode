@@ -28,6 +28,7 @@ public strictfp class DroneUtil {
     static int mapHeight;
     static int mapWidth;
     static MapLocation localHQ;
+    static MapLocation enemyHQ;
     static boolean followingObstacle;
     static boolean alreadyHitMapEdge;
     static boolean rewindingToObstacle;
@@ -35,8 +36,12 @@ public strictfp class DroneUtil {
     static ObstacleDir obstacleDir;
     static Direction currentDirection;
     static Set<MapLocation> locationHistory;
-
-    static MapLocation enemyHQLocation;
+    static Communication communication;
+    static Set<MapLocation> waterLocations;
+    static int currentNode;
+    static int nodeModifier;
+    static int areaModeCount;
+    static ArrayList<MapLocation> defArea;
 
     public DroneUtil(RobotController rc, MapLocation localHQ) {
         DroneUtil.rc = rc;
@@ -50,6 +55,12 @@ public strictfp class DroneUtil {
         obstacleDir = ObstacleDir.UNASSIGNED;
         currentDirection = Direction.CENTER;
         locationHistory = new HashSet<>();
+        communication = new Communication(rc);
+        waterLocations = new HashSet<>();
+        currentNode = 0;
+        nodeModifier = 1;
+        areaModeCount = 0;
+        defArea = null;
     }
 
     public void reset() throws GameActionException {
@@ -60,6 +71,92 @@ public strictfp class DroneUtil {
         followingObstacle = false;
         alreadyHitMapEdge = false;
         rewindingToObstacle = false;
+    }
+
+
+
+
+    public void defenseMode() throws GameActionException {
+
+
+      boolean ignoreHQ = true;
+
+      if (defArea == null) {
+        defArea = new ArrayList<MapLocation>();
+        defArea.add( localHQ.add(Direction.NORTHEAST).add(Direction.NORTHEAST).add(Direction.NORTHEAST));
+        defArea.add( localHQ.add(Direction.NORTHWEST).add(Direction.NORTHWEST).add(Direction.NORTHWEST));
+        defArea.add( localHQ.add(Direction.SOUTHWEST).add(Direction.SOUTHWEST).add(Direction.SOUTHWEST));
+        defArea.add( localHQ.add(Direction.SOUTHEAST).add(Direction.SOUTHEAST).add(Direction.SOUTHEAST));
+      }
+
+
+      if (rc.getRoundNum() == 2100) {
+        defArea.set(0, defArea.get(0).add(Direction.SOUTHWEST));
+        defArea.set(1, defArea.get(1).add(Direction.SOUTHEAST));
+        defArea.set(2, defArea.get(2).add(Direction.NORTHWEST));
+        defArea.set(3, defArea.get(3).add(Direction.NORTHEAST));
+      }
+      
+      if (rc.getRoundNum() > 2100) {
+        ignoreHQ = true;
+      }
+
+      areaMode(defArea, "defense", ignoreHQ);
+      
+
+    }
+
+    
+    public int areaMode(ArrayList<MapLocation> nodes, String style, boolean ignoreHQ) throws GameActionException {
+
+      areaModeCount++;
+      
+      if (areaModeCount == 12)
+        currentNode = (int)(Math.random() * (nodes.size() + 1.0));
+
+      Boolean isOnEdge = isLocationMapEdge(rc.getLocation());
+
+      if (rc.getLocation().equals(nodes.get(currentNode)))
+        currentNode += nodeModifier;
+
+      else if(isOnEdge) {
+        nodeModifier = nodeModifier * -1;
+        currentNode += nodeModifier;
+      }
+      
+      if(currentNode >= nodes.size())
+        currentNode = 0;
+
+      if(currentNode < 0)
+        currentNode = nodes.size()-1;
+
+
+      RobotInfo[] nearbyBots = rc.senseNearbyRobots();
+      RobotInfo botToCollect = null;
+      
+      for(RobotInfo ri : nearbyBots) {
+        if (ri.getTeam() != rc.getTeam() && (ri.getType() == RobotType.LANDSCAPER || ri.getType() == RobotType.MINER)) {
+          if (localHQ != null && style == "defense") {
+            if (botToCollect == null 
+            || (botToCollect.getType() == RobotType.MINER && ri.getType() == RobotType.LANDSCAPER)
+            || ri.getLocation().distanceSquaredTo(localHQ) < botToCollect.getLocation().distanceSquaredTo(localHQ))
+              botToCollect = ri;
+          }
+          else {
+            if (botToCollect == null || ri.getLocation().distanceSquaredTo(rc.getLocation()) < botToCollect.getLocation().distanceSquaredTo(rc.getLocation()))
+              botToCollect = ri;
+          }
+        }
+      }
+
+      if (botToCollect != null) {
+        collectByID(botToCollect.getLocation(), botToCollect.getID());
+
+      } else {
+        travelTo(nodes.get(currentNode), "linear", false, false);
+      }
+
+      return 0;
     }
 
     public int collectByID(MapLocation goal, int collectID) throws GameActionException {
@@ -116,7 +213,7 @@ public strictfp class DroneUtil {
       
         int travelToCode = 0;
         
-        travelToCode = travelTo(dest, "linear");
+        travelToCode = travelTo(dest, "linear", false, true);
 
         outputCode += travelToCode;
 
@@ -130,14 +227,21 @@ public strictfp class DroneUtil {
     }
 
 
-    public int travelTo(MapLocation dest, String style) throws GameActionException {
+    public int travelTo(MapLocation dest, String style, boolean overrideNets, boolean overrideHQ) throws GameActionException {
       
         // Returns 0 if travel complete
         // Returns 1 if on course
         // Returns 2 if on course with obstacle
+        // Returns 3 if trying to exit hq or enemy net gun radius
 
-        int dx = dest.x-rc.getLocation().x;
-        int dy = dest.y-rc.getLocation().y;
+        // styles: "linear", else
+
+
+
+        MapLocation loc = rc.getLocation();
+
+        int dx = dest.x-loc.x;
+        int dy = dest.y-loc.y;
 
         // Already at destination
         if (dy == 0 && dx == 0) {
@@ -146,7 +250,7 @@ public strictfp class DroneUtil {
             return 0;
         }
 
-        locationHistory.add(rc.getLocation());
+        locationHistory.add(loc);
 
         Direction nextDir = Direction.CENTER;
 
@@ -157,66 +261,116 @@ public strictfp class DroneUtil {
           nextDir = ttDiagFirst(dx, dy);
         }
 
-        if (rc.canMove(nextDir) && !rc.adjacentLocation(nextDir).isWithinDistanceSquared(localHQ, 8)) { // Drone can move
+        RobotInfo[] visibleRobots = rc.senseNearbyRobots();
+
+        ArrayList<MapLocation> netguns = new ArrayList<MapLocation>();
+        MapLocation closestGun = null;
+        
+
+        if (enemyHQ == null)
+          checkForEnemyHQ(visibleRobots);
+
+        boolean inNetgunRange = isInNetgunRange(loc, visibleRobots);
+        
+        for(RobotInfo n : visibleRobots) {
+          if (n.getTeam() != rc.getTeam() && n.getType() == RobotType.NET_GUN){
+            netguns.add(n.getLocation());
+            if (closestGun == null || loc.distanceSquaredTo(n.getLocation()) < loc.distanceSquaredTo(closestGun))
+              closestGun = n.getLocation();
+          }
+        } 
+        if (enemyHQ != null && loc.distanceSquaredTo(enemyHQ) < loc.distanceSquaredTo(closestGun))
+          closestGun = enemyHQ;
+
+        if (
+          rc.canMove(nextDir) 
+          && (!loc.add(nextDir).isWithinDistanceSquared(localHQ, 13) || overrideHQ)
+          && (!isInNetgunRange(loc.add(nextDir), visibleRobots) || overrideNets) 
+          && (!inNetgunRange || overrideNets)
+          ) { // Drone can move normally
+
             rc.move(nextDir);
             currentDirection = nextDir;
             return 1;
-
-        } else {
           
-            // Obstacle at next point, so try closest spin around
+        } else
+          
+          { // Obstacle (or net range/HQ) at next point, so try closest spin around but not in HQ range
             
-            obstacleEncounteredAt = rc.getLocation();
-
             boolean moved = false;
+
+            Direction finalDir = nextDir;
+
+            obstacleEncounteredAt = loc;
+
+            if (inNetgunRange && !overrideNets && closestGun != null) {  // leave netgun range if in it
+              nextDir = loc.directionTo(closestGun).opposite();
+            }
+
+            else if (loc.isWithinDistanceSquared(localHQ, 13) && overrideHQ == false) { // leave hq range if in it
+              nextDir = loc.directionTo(localHQ).opposite();
+              if(rc.canMove(nextDir)) {
+                moved = true;
+                rc.move(nextDir);
+                System.out.println(">>>>> Avoiding netgun or HQ");
+                return 3;
+              }  
+            }
+            
+            
+            
+            
             Direction dirCW = nextDir.rotateRight();
             Direction dirCCW = nextDir.rotateLeft();
             int variance = 1;
-            
-            Direction finalDir = nextDir;
+          
 
             // Priorize spin based on direction
-            double slope = dy/dx;
+            double slope = dy;
+            if (dx != 0)
+              slope = slope/dx;
 
-            // CW preferred (using XOR)
-            if((Math.abs(slope) < 1) ^ (slope < 0)) {
-              while (variance < 4 && !moved) {
-                if (rc.canMove(dirCW) && !rc.adjacentLocation(dirCW).isWithinDistanceSquared(localHQ, 8)) {
-                  System.out.println(">>>>> Avoiding obstacle CW x" + variance);
-                  finalDir = dirCW;
-                  moved = true;
-                } else if (rc.canMove(dirCCW) && !rc.adjacentLocation(dirCCW).isWithinDistanceSquared(localHQ, 8)) {
-                  System.out.println(">>>>> Avoiding obstacle CCW x" + variance);
-                  finalDir = dirCCW;
-                  moved = true;
-                } else {
-                  variance++;
-                  dirCW = dirCW.rotateRight();
-                  dirCCW = dirCCW.rotateRight();
+            if(!moved) {
+              // CW preferred (using XOR)
+              if((Math.abs(slope) < 1) ^ (slope < 0)) {
+                while (variance < 4 && !moved) {
+                  if (rc.canMove(dirCW) && (!isInNetgunRange(loc.add(dirCW), visibleRobots) || overrideNets))  {
+                    System.out.println(">>>>> Avoiding obstacle CW x" + variance);
+                    finalDir = dirCW;
+                    moved = true;
+                  } else if (rc.canMove(dirCCW) && (!isInNetgunRange(loc.add(dirCCW), visibleRobots) || overrideNets)) {
+                    System.out.println(">>>>> Avoiding obstacle CCW x" + variance);
+                    finalDir = dirCCW;
+                    moved = true;
+                  } else {
+                    variance++;
+                    dirCW = dirCW.rotateRight();
+                    dirCCW = dirCCW.rotateRight();
+                  }
                 }
-              }
-            } else { // CCW preferred
-              while (variance < 4 && !moved) {
-                if (rc.canMove(dirCCW) && !rc.adjacentLocation(dirCCW).isWithinDistanceSquared(localHQ, 8)) {
-                  System.out.println(">>>>> Avoiding obstacle CCW x" + variance);
-                  finalDir = dirCCW;
-                  moved = true;
-                } else if (rc.canMove(dirCW) && !rc.adjacentLocation(dirCW).isWithinDistanceSquared(localHQ, 8)){
-                  System.out.println(">>>>> Avoiding obstacle CW x" + variance);
-                  finalDir = dirCW;
-                  moved = true;
-                }
-                else {
-                  variance++;
-                  dirCW = dirCW.rotateRight();
-                  dirCCW = dirCCW.rotateRight();
+              } else { // CCW preferred
+                while (variance < 4 && !moved) {
+                  if (rc.canMove(dirCCW)&& (!isInNetgunRange(loc.add(dirCCW), visibleRobots) || overrideNets) ) {
+                    System.out.println(">>>>> Avoiding obstacle CCW x" + variance);
+                    finalDir = dirCCW;
+                    moved = true;
+                  } else if (rc.canMove(dirCW) && (!isInNetgunRange(loc.add(dirCW), visibleRobots) || overrideNets) ){
+                    System.out.println(">>>>> Avoiding obstacle CW x" + variance);
+                    finalDir = dirCW;
+                    moved = true;
+                  }
+                  else {
+                    variance++;
+                    dirCW = dirCW.rotateRight();
+                    dirCCW = dirCCW.rotateRight();
+                  }
                 }
               }
             }
 
-            if (finalDir != nextDir) {
+            if (finalDir != nextDir && rc.canMove(finalDir)) {
               rc.move(finalDir);
-            } else if (rc.canMove(dirCW.rotateRight()) && !rc.adjacentLocation(dirCW).isWithinDistanceSquared(localHQ, 8)) {
+            } else if (rc.canMove(dirCW.rotateRight()) && !loc.add(dirCW).isWithinDistanceSquared(localHQ, 13)) {
               System.out.println(">>>>> Cannot advance, retreating");
               rc.move(dirCW.rotateRight());
             } else {
@@ -273,7 +427,32 @@ public strictfp class DroneUtil {
       return Direction.CENTER;
     }
 
+    public static boolean checkForEnemyHQ(RobotInfo[] visibleRobots) throws GameActionException {
+      for(RobotInfo r : visibleRobots) {
+        if(r.getType() == RobotType.HQ && r.getTeam() != rc.getTeam()) {
+            enemyHQ = r.getLocation();
+            communication.announceEnemyHQ(enemyHQ);
+            return true;
+          }
+        }
+      return false;
+    }
 
+    public static boolean isInNetgunRange(MapLocation loc, RobotInfo[] visibleRobots) {
+
+      if (enemyHQ != null)
+        if (loc.isWithinDistanceSquared(enemyHQ, 15))
+          return true;
+
+      for(RobotInfo r : visibleRobots){
+        if (r.getTeam() != rc.getTeam())
+          if(loc.isWithinDistanceSquared(r.getLocation(), 15))
+            return true;
+
+      }
+
+      return false;
+    }
 
     public static boolean isLocationMapEdge(MapLocation loc) throws GameActionException {
         return loc.x == 0 || loc.x == mapWidth-1 || loc.y == 0 || loc.y == mapHeight-1;
