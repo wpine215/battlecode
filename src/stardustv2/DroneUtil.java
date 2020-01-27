@@ -63,6 +63,44 @@ public strictfp class DroneUtil {
         rewindingToObstacle = false;
     }
 
+
+    static int currentNode = 0;
+    public int areaMode(ArrayList<MapLocation> nodes, String style) throws GameActionException {
+
+      if(currentNode >= nodes.size())
+        currentNode = 0;
+
+      if (rc.getLocation() == nodes.get(currentNode))
+        currentNode++;
+
+      RobotInfo[] nearbyBots = rc.senseNearbyRobots();
+      RobotInfo botToCollect = null;
+      
+      for(RobotInfo ri : nearbyBots) {
+        if (ri.getType() == RobotType.LANDSCAPER || ri.getType() == RobotType.MINER) {
+          if (localHQ != null && style == "defense") {
+            if (botToCollect == null || ri.getLocation().distanceSquaredTo(localHQ) < botToCollect.getLocation().distanceSquaredTo(localHQ))
+              botToCollect = ri;
+          }
+          else {
+            if (botToCollect == null || ri.getLocation().distanceSquaredTo(rc.getLocation()) < botToCollect.getLocation().distanceSquaredTo(rc.getLocation()))
+              botToCollect = ri;
+          }
+        }
+      }
+
+      if (botToCollect!=null) {
+        collectByID(botToCollect.getLocation(), botToCollect.getID());
+
+      } else {
+        travelTo(nodes.get(currentNode), "diag", false, false);
+      }
+
+
+      return 0;
+
+    }
+
     public int collectByID(MapLocation goal, int collectID) throws GameActionException {
       
       // Returns -1 if carrying other robot 
@@ -137,6 +175,8 @@ public strictfp class DroneUtil {
         // Returns 1 if on course
         // Returns 2 if on course with obstacle
         // Returns 3 if trying to exit hq or enemy net gun radius
+
+        // styles: "linear", else
 
         MapLocation loc = rc.getLocation();
 
