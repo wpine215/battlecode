@@ -1,6 +1,7 @@
 package stardustv2;
 import battlecode.common.*;
 
+import java.nio.file.Path;
 import java.util.*;
 
 enum Quadrant {
@@ -114,7 +115,8 @@ public strictfp class RobotPlayer {
 
     // DRONE VARIABLES
     static int dronesBuilt = 0;
-    static DroneUtil droneUtil;
+//    static DroneUtil droneUtil;
+    static Drone drone;
 
     // DECISION CONSTANTS
     final static int soupNeededToBuildDesignSchool  = 365;
@@ -188,7 +190,8 @@ public strictfp class RobotPlayer {
         }
 
         if (rc.getType() == RobotType.DELIVERY_DRONE) {
-            droneUtil = new DroneUtil(rc, localHQ);
+//            droneUtil = new DroneUtil(rc, localHQ);
+            drone = new Drone(rc, localHQ);
         }
 
         if (rc.getType() == RobotType.DESIGN_SCHOOL || rc.getType() == RobotType.LANDSCAPER) {
@@ -542,31 +545,37 @@ public strictfp class RobotPlayer {
     }
 
     static void runDeliveryDrone() throws GameActionException {
-        // ORIGINAL DRONE CODE //////////////////////////////////////////////////////////////////////////
-        Team enemy = rc.getTeam().opponent();
-        if (!rc.isCurrentlyHoldingUnit()) {
-            // See if there are any enemy robots within striking range (distance 1 from lumberjack's radius)
-            RobotInfo[] robots = rc.senseNearbyRobots(GameConstants.DELIVERY_DRONE_PICKUP_RADIUS_SQUARED, enemy);
+        if (Pathfinding.locIsNull(enemyHQ)) {
+            Transaction rb = communication.getLastRebroadcast();
+            if (!Pathfinding.locIsNull(communication.getEnemyHQFromRebroadcast(rb))) {
+                enemyHQ = communication.getEnemyHQFromRebroadcast(rb);
+            }
+        }
 
-            /*if (robots.length > 0) {
-                // Pick up a first robot within range
-                rc.pickUpUnit(robots[0].getID());
-                System.out.println("I picked up " + robots[0].getID() + "!");
-            }*/
-            //droneUtil.travelTo(localHQ, "linear", false, false);
-            droneUtil.defenseMode();
-        } else {
-            for (Direction dir : Utility.getDirections()) {
-                if (rc.senseFlooding(rc.adjacentLocation(dir))) {
-                    if (rc.canDropUnit(dir)) {
-                        rc.dropUnit(dir);
+        if (rc.getRoundNum() > 200 && rc.getRoundNum() < 700) {
+            if (Pathfinding.locIsNull(enemyHQ)) {
+                drone.circleAround(possibleEnemyLocations[currentlyScoutingEnemyAt], 15);
+                RobotInfo[] nearby = rc.senseNearbyRobots(rc.getCurrentSensorRadiusSquared(), rc.getTeam().opponent());
+                for (RobotInfo r : nearby) {
+                    if (r.getType() == RobotType.HQ) {
+                        enemyHQ = r.location;
+                        communication.announceEnemyHQ(r.location);
+                        System.out.println(">>>> FOUND ENEMY HQ AT" + enemyHQ);
                     }
                 }
+                if (Pathfinding.locIsNull(enemyHQ) && rc.canSenseLocation(possibleEnemyLocations[currentlyScoutingEnemyAt])) {
+                    if (currentlyScoutingEnemyAt < 2) {
+                        currentlyScoutingEnemyAt++;
+                    } else {
+                        drone.circleAround(localHQ, 15);
+                    }
+                }
+            } else {
+                drone.circleAround(enemyHQ, 15);
             }
-            droneUtil.travelTo(localHQ, "linear", false, false);
+        } else {
+            drone.circleAround(localHQ, 15);
         }
-//        ut.tryMove(ut.randomDirection());
-        //////////////////////////////////////////////////////////////////////////////////////////////
     }
 
     static void runNetGun() throws GameActionException {
