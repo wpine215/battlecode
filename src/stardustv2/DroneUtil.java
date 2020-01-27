@@ -37,6 +37,7 @@ public strictfp class DroneUtil {
     static Direction currentDirection;
     static Set<MapLocation> locationHistory;
     static Communication communication;
+    static Set<MapLocation> waterLocations;
 
     public DroneUtil(RobotController rc, MapLocation localHQ) {
         DroneUtil.rc = rc;
@@ -51,6 +52,7 @@ public strictfp class DroneUtil {
         currentDirection = Direction.CENTER;
         locationHistory = new HashSet<>();
         communication = new Communication(rc);
+        waterLocations = new HashSet<>();
     }
 
     public void reset() throws GameActionException {
@@ -79,7 +81,9 @@ public strictfp class DroneUtil {
       for(RobotInfo ri : nearbyBots) {
         if (ri.getType() == RobotType.LANDSCAPER || ri.getType() == RobotType.MINER) {
           if (localHQ != null && style == "defense") {
-            if (botToCollect == null || ri.getLocation().distanceSquaredTo(localHQ) < botToCollect.getLocation().distanceSquaredTo(localHQ))
+            if (botToCollect == null 
+            || (botToCollect.getType() == RobotType.MINER && ri.getType() == RobotType.LANDSCAPER)
+            || ri.getLocation().distanceSquaredTo(localHQ) < botToCollect.getLocation().distanceSquaredTo(localHQ))
               botToCollect = ri;
           }
           else {
@@ -96,9 +100,7 @@ public strictfp class DroneUtil {
         travelTo(nodes.get(currentNode), "diag", false, false);
       }
 
-
       return 0;
-
     }
 
     public int collectByID(MapLocation goal, int collectID) throws GameActionException {

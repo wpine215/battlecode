@@ -482,7 +482,7 @@ public strictfp class RobotPlayer {
                 rc.pickUpUnit(robots[0].getID());
                 System.out.println("I picked up " + robots[0].getID() + "!");
             }
-            droneUtil.travelTo(localHQ, "linear");
+            droneUtil.travelTo(localHQ, "linear", false, false);
         } else {
             for (Direction dir : Utility.getDirections()) {
                 if (rc.senseFlooding(rc.adjacentLocation(dir))) {
@@ -491,7 +491,7 @@ public strictfp class RobotPlayer {
                     }
                 }
             }
-            droneUtil.travelTo(localHQ, "linear");
+            droneUtil.travelTo(localHQ, "linear", false, false);
         }
 //        ut.tryMove(ut.randomDirection());
         //////////////////////////////////////////////////////////////////////////////////////////////
