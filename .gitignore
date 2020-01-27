@@ -31,3 +31,4 @@ battlecode-scaffold.iws
 .settings/*.zip
 .zip
 src/stardustv2/*.zip
+.settings/org.eclipse.buildship.core.prefs

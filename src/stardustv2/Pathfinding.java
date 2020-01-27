@@ -1,21 +1,12 @@
 package stardustv2;
 
 import battlecode.common.*;
-
 import java.util.*;
 
 public strictfp class Pathfinding {
     static RobotController rc;
-    static Direction[] directions = {
-            Direction.NORTH,
-            Direction.NORTHEAST,
-            Direction.EAST,
-            Direction.SOUTHEAST,
-            Direction.SOUTH,
-            Direction.SOUTHWEST,
-            Direction.WEST,
-            Direction.NORTHWEST
-    };
+    static Utility ut;
+    static Direction[] directions = Utility.getDirections();
 
     enum MapEdge {
         UNASSIGNED,
@@ -30,8 +21,10 @@ public strictfp class Pathfinding {
         LEFT,
         RIGHT
     }
+
     static int mapHeight;
     static int mapWidth;
+    static MapLocation localHQ;
     static boolean followingObstacle;
     static boolean alreadyHitMapEdge;
     static MapEdge lastMapEdge = MapEdge.UNASSIGNED;
@@ -45,10 +38,13 @@ public strictfp class Pathfinding {
     static LinkedList<MapLocation> lastEightLocations;
     static int resetRounds;
 
-    public Pathfinding(RobotController rc) {
+    public Pathfinding(RobotController rc, MapLocation localHQ) {
         Pathfinding.rc = rc;
+        Pathfinding.localHQ = localHQ;
         mapHeight = rc.getMapHeight();
         mapWidth = rc.getMapWidth();
+        Pathfinding.ut = new Utility(rc, mapHeight, mapWidth, localHQ);
+
         followingObstacle = false;
         alreadyHitMapEdge = false;
         rewindingToObstacle = false;
@@ -100,28 +96,9 @@ public strictfp class Pathfinding {
         lastEightLocations.clear();
     }
 
-    static Direction randomDirection() throws GameActionException {
-        Direction temp = directions[(int) (Math.random() * directions.length)];
-        int maxTries = 8;
-        while (rc.senseFlooding(rc.adjacentLocation(temp)) && maxTries > 0) {
-            temp = directions[(int) (Math.random() * directions.length)];
-            maxTries--;
-        }
-        return directions[(int) (Math.random() * directions.length)];
-    }
-
-    static boolean tryMove(Direction dir) throws GameActionException {
-        // System.out.println("I am trying to move " + dir + "; " + rc.isReady() + " " + rc.getCooldownTurns() + " " + rc.canMove(dir));
-        if (rc.isReady() && rc.canMove(dir) && !rc.senseFlooding(rc.adjacentLocation(dir))) {
-            rc.move(dir);
-            return true;
-        } else return false;
-    }
-
     public boolean travelTo(MapLocation dest) throws GameActionException {
         // Returns true if movement in progress
         // Returns false if journey complete or obstacle encountered
-
         if (!currentMLine.isEmpty()) {
             drawPersistentMLine();
         }
@@ -129,7 +106,7 @@ public strictfp class Pathfinding {
         Random rand = new Random();
 
         if (resetRounds > 0) {
-            tryMove(randomDirection());
+            ut.tryMove(ut.randomDirection());
             resetRounds--;
             return true;
         }
