@@ -478,11 +478,7 @@ public strictfp class RobotPlayer {
             // See if there are any enemy robots within striking range (distance 1 from lumberjack's radius)
             RobotInfo[] robots = rc.senseNearbyRobots(GameConstants.DELIVERY_DRONE_PICKUP_RADIUS_SQUARED, enemy);
 
-            ArrayList<MapLocation> TEMP = new ArrayList<MapLocation>();
-            TEMP.add( localHQ.add(Direction.NORTHEAST).add(Direction.NORTHEAST).add(Direction.NORTHEAST));
-            TEMP.add( localHQ.add(Direction.NORTHWEST).add(Direction.NORTHWEST).add(Direction.NORTHWEST));
-            TEMP.add( localHQ.add(Direction.SOUTHWEST).add(Direction.SOUTHWEST).add(Direction.SOUTHWEST));
-            TEMP.add( localHQ.add(Direction.SOUTHEAST).add(Direction.SOUTHEAST).add(Direction.SOUTHEAST));
+
 
             /*if (robots.length > 0) {
                 // Pick up a first robot within range
@@ -490,7 +486,7 @@ public strictfp class RobotPlayer {
                 System.out.println("I picked up " + robots[0].getID() + "!");
             }*/
             //droneUtil.travelTo(localHQ, "linear", false, false);
-            droneUtil.areaMode(TEMP,"defense");
+            droneUtil.defenseMode();
         } else {
             for (Direction dir : Utility.getDirections()) {
                 if (rc.senseFlooding(rc.adjacentLocation(dir))) {
@@ -893,7 +889,7 @@ public strictfp class RobotPlayer {
                 Direction digHere = Direction.CENTER;
                 while (rc.canDepositDirt(enemyHQDir)) {
 //                  TODO: COMMENT FOLLOWING LINE ONLY IN DEVELOPMENT!
-                    rc.depositDirt(enemyHQDir);
+                    //rc.depositDirt(enemyHQDir);
                 }
                 while (rc.canDigDirt(digHere)) {
                     rc.digDirt(digHere);

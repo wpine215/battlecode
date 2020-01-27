@@ -39,6 +39,9 @@ public strictfp class DroneUtil {
     static Communication communication;
     static Set<MapLocation> waterLocations;
     static int currentNode;
+    static int nodeModifier;
+    static int areaModeCount;
+    static ArrayList<MapLocation> defArea;
 
     public DroneUtil(RobotController rc, MapLocation localHQ) {
         DroneUtil.rc = rc;
@@ -55,6 +58,9 @@ public strictfp class DroneUtil {
         communication = new Communication(rc);
         waterLocations = new HashSet<>();
         currentNode = 0;
+        nodeModifier = 1;
+        areaModeCount = 0;
+        defArea = null;
     }
 
     public void reset() throws GameActionException {
@@ -68,20 +74,62 @@ public strictfp class DroneUtil {
     }
 
 
-    
-    public int areaMode(ArrayList<MapLocation> nodes, String style) throws GameActionException {
 
+
+    public void defenseMode() throws GameActionException {
+
+
+      boolean ignoreHQ = true;
+
+      if (defArea == null) {
+        defArea = new ArrayList<MapLocation>();
+        defArea.add( localHQ.add(Direction.NORTHEAST).add(Direction.NORTHEAST).add(Direction.NORTHEAST));
+        defArea.add( localHQ.add(Direction.NORTHWEST).add(Direction.NORTHWEST).add(Direction.NORTHWEST));
+        defArea.add( localHQ.add(Direction.SOUTHWEST).add(Direction.SOUTHWEST).add(Direction.SOUTHWEST));
+        defArea.add( localHQ.add(Direction.SOUTHEAST).add(Direction.SOUTHEAST).add(Direction.SOUTHEAST));
+      }
+
+
+      if (rc.getRoundNum() == 2100) {
+        defArea.set(0, defArea.get(0).add(Direction.SOUTHWEST));
+        defArea.set(1, defArea.get(1).add(Direction.SOUTHEAST));
+        defArea.set(2, defArea.get(2).add(Direction.NORTHWEST));
+        defArea.set(3, defArea.get(3).add(Direction.NORTHEAST));
+      }
       
-      if (rc.getLocation().equals(nodes.get(currentNode)))
-        currentNode = currentNode + 1;
+      if (rc.getRoundNum() > 2100) {
+        ignoreHQ = true;
+      }
 
+      areaMode(defArea, "defense", ignoreHQ);
+      
+
+    }
+
+    
+    public int areaMode(ArrayList<MapLocation> nodes, String style, boolean ignoreHQ) throws GameActionException {
+
+      areaModeCount++;
+      
+      if (areaModeCount == 12)
+        currentNode = (int)(Math.random() * (nodes.size() + 1.0));
+
+      Boolean isOnEdge = isLocationMapEdge(rc.getLocation());
+
+      if (rc.getLocation().equals(nodes.get(currentNode)))
+        currentNode += nodeModifier;
+
+      else if(isOnEdge) {
+        nodeModifier = nodeModifier * -1;
+        currentNode += nodeModifier;
+      }
+      
       if(currentNode >= nodes.size())
         currentNode = 0;
 
+      if(currentNode < 0)
+        currentNode = nodes.size()-1;
 
-      System.out.println("CURRENT NODE: ><><><>: " + currentNode);
-
-      System.out.println("NUM NODES: ><><><>: " + nodes.size());
 
       RobotInfo[] nearbyBots = rc.senseNearbyRobots();
       RobotInfo botToCollect = null;
@@ -101,7 +149,7 @@ public strictfp class DroneUtil {
         }
       }
 
-      if (botToCollect!=null) {
+      if (botToCollect != null) {
         collectByID(botToCollect.getLocation(), botToCollect.getID());
 
       } else {
@@ -179,7 +227,7 @@ public strictfp class DroneUtil {
     }
 
 
-    public int travelTo(MapLocation dest, String style, Boolean overrideNets, Boolean overrideHQ) throws GameActionException {
+    public int travelTo(MapLocation dest, String style, boolean overrideNets, boolean overrideHQ) throws GameActionException {
       
         // Returns 0 if travel complete
         // Returns 1 if on course
@@ -187,6 +235,8 @@ public strictfp class DroneUtil {
         // Returns 3 if trying to exit hq or enemy net gun radius
 
         // styles: "linear", else
+
+
 
         MapLocation loc = rc.getLocation();
 
@@ -257,17 +307,17 @@ public strictfp class DroneUtil {
               nextDir = loc.directionTo(closestGun).opposite();
             }
 
-            else if (loc.isWithinDistanceSquared(localHQ, 13) && !overrideHQ) { // leave hq range if in it
+            else if (loc.isWithinDistanceSquared(localHQ, 13) && overrideHQ == false) { // leave hq range if in it
               nextDir = loc.directionTo(localHQ).opposite();
+              if(rc.canMove(nextDir)) {
+                moved = true;
+                rc.move(nextDir);
+                System.out.println(">>>>> Avoiding netgun or HQ");
+                return 3;
+              }  
             }
             
-            if(rc.canMove(nextDir)) {
-              moved = true;
-              rc.move(nextDir);
-              System.out.println(">>>>> Avoiding netgun or HQ");
-              return 3;
-            }
-
+            
             
             
             Direction dirCW = nextDir.rotateRight();
@@ -320,7 +370,7 @@ public strictfp class DroneUtil {
 
             if (finalDir != nextDir && rc.canMove(finalDir)) {
               rc.move(finalDir);
-            } else if (rc.canMove(dirCW.rotateRight()) && !loc.add(dirCW).isWithinDistanceSquared(localHQ, 8)) {
+            } else if (rc.canMove(dirCW.rotateRight()) && !loc.add(dirCW).isWithinDistanceSquared(localHQ, 13)) {
               System.out.println(">>>>> Cannot advance, retreating");
               rc.move(dirCW.rotateRight());
             } else {
