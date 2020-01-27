@@ -22,16 +22,29 @@ public strictfp class Drone {
         Drone.mapHeight = rc.getMapHeight();
         Drone.mapWidth = rc.getMapWidth();
         Drone.ut = new Utility(rc, mapHeight, mapWidth, localHQ);
-
     }
 
-    public boolean circleAround(MapLocation dest, int radiusSquared) throws GameActionException {
+    public boolean locationWithinNetgunRange(MapLocation loc, ArrayList<MapLocation> knownNetguns) {
+        for (MapLocation ng : knownNetguns) {
+            System.out.println("NETGUN AT " + ng);
+            if (loc.isWithinDistanceSquared(ng, 15)) {
+                System.out.println("Location " + loc + "IS WITHIN NETGUN RANGE OF " + ng);
+                return true;
+            }
+        }
+        System.out.println("Location " + loc + "IS NOT WITHIN ANY NETGUN RANGE");
+        return false;
+    }
+
+    public boolean circleAround(MapLocation dest, int radiusSquared, ArrayList<MapLocation> knownNetguns) throws GameActionException {
         if (!rc.isReady()) {
             return false;
         }
 
         Direction moveTowards = rc.getLocation().directionTo(dest);
-        if (rc.canMove(moveTowards) && !rc.adjacentLocation(moveTowards).isWithinDistanceSquared(dest, radiusSquared)) {
+        if (rc.canMove(moveTowards)
+                && !rc.adjacentLocation(moveTowards).isWithinDistanceSquared(dest, radiusSquared)
+                && !locationWithinNetgunRange(rc.adjacentLocation(moveTowards), knownNetguns)) {
             rc.move(moveTowards);
             return true;
         } else {
@@ -53,7 +66,9 @@ public strictfp class Drone {
                     hitMapEdge++;
                     continue;
                 }
-                if (rc.canMove(d) && !rc.adjacentLocation(d).isWithinDistanceSquared(dest, radiusSquared)) {
+                if (rc.canMove(d)
+                        && !rc.adjacentLocation(d).isWithinDistanceSquared(dest, radiusSquared)
+                        && !locationWithinNetgunRange(rc.adjacentLocation(d), knownNetguns)) {
                     rc.move(d);
                     return true;
                 }
@@ -64,7 +79,5 @@ public strictfp class Drone {
         }
         return false;
     }
-
-
 
 }

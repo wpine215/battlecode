@@ -165,6 +165,10 @@ public strictfp class Utility {
         return result;
     }
 
+    public static MapLocation diagonalOpposite(MapLocation original, int mapHeight, int mapWidth) {
+        return new MapLocation(mapWidth - 1 - original.x, mapHeight - 1 - original.y);
+    }
+
     public boolean locationIsWallDeadzone(Direction dir) {
         if (localHQ.x == 1) {
             if (localHQ.y == 1) {
