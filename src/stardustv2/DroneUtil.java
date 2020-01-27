@@ -38,6 +38,7 @@ public strictfp class DroneUtil {
     static Set<MapLocation> locationHistory;
     static Communication communication;
     static Set<MapLocation> waterLocations;
+    static int currentNode;
 
     public DroneUtil(RobotController rc, MapLocation localHQ) {
         DroneUtil.rc = rc;
@@ -53,6 +54,7 @@ public strictfp class DroneUtil {
         locationHistory = new HashSet<>();
         communication = new Communication(rc);
         waterLocations = new HashSet<>();
+        currentNode = 0;
     }
 
     public void reset() throws GameActionException {
@@ -66,20 +68,26 @@ public strictfp class DroneUtil {
     }
 
 
-    static int currentNode = 0;
+    
     public int areaMode(ArrayList<MapLocation> nodes, String style) throws GameActionException {
+
+      
+      if (rc.getLocation().equals(nodes.get(currentNode)))
+        currentNode = currentNode + 1;
 
       if(currentNode >= nodes.size())
         currentNode = 0;
 
-      if (rc.getLocation() == nodes.get(currentNode))
-        currentNode++;
+
+      System.out.println("CURRENT NODE: ><><><>: " + currentNode);
+
+      System.out.println("NUM NODES: ><><><>: " + nodes.size());
 
       RobotInfo[] nearbyBots = rc.senseNearbyRobots();
       RobotInfo botToCollect = null;
       
       for(RobotInfo ri : nearbyBots) {
-        if (ri.getType() == RobotType.LANDSCAPER || ri.getType() == RobotType.MINER) {
+        if (ri.getTeam() != rc.getTeam() && (ri.getType() == RobotType.LANDSCAPER || ri.getType() == RobotType.MINER)) {
           if (localHQ != null && style == "defense") {
             if (botToCollect == null 
             || (botToCollect.getType() == RobotType.MINER && ri.getType() == RobotType.LANDSCAPER)
@@ -97,7 +105,7 @@ public strictfp class DroneUtil {
         collectByID(botToCollect.getLocation(), botToCollect.getID());
 
       } else {
-        travelTo(nodes.get(currentNode), "diag", false, false);
+        travelTo(nodes.get(currentNode), "linear", false, false);
       }
 
       return 0;
@@ -268,9 +276,9 @@ public strictfp class DroneUtil {
           
 
             // Priorize spin based on direction
-            double slope = dy*100;
+            double slope = dy;
             if (dx != 0)
-              slope = dy/dx;
+              slope = slope/dx;
 
             if(!moved) {
               // CW preferred (using XOR)
